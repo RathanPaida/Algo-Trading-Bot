@@ -1,0 +1,88 @@
+====================================================================================================
+COMPREHENSIVE TRADING SYSTEM REPORT
+====================================================================================================
+
+Generated: 2026-01-12 00:09:30
+
+Configuration:
+  Prediction Horizon: 5 days
+  Lookback Window: 90 days
+  Portfolio Size: Top 15 stocks
+  Transaction Costs: 8 bps
+  Slippage: 3 bps
+  Model Ensemble: 60% XGBoost + 40% LSTM
+
+
+====================================================================================================
+VALIDATION PERIOD RESULTS
+====================================================================================================
+
+Period: 2024-01-01 to 2024-06-28
+
+Strategy Performance:
+  Total Return        :      15.93%
+  CAGR                :      36.75%
+  Sharpe Ratio        :       2.17
+  Max Drawdown        :      -5.97%
+
+Relative Performance:
+  Alpha               :       5.49%
+  Outperformance      :       5.49%
+
+Trading Statistics:
+  Number of Trades    :         20
+  Avg Turnover        :     111.64%
+  Total Costs         :       2.46%
+  Win Rate            :      60.50%
+  Best Day            :       3.87%
+  Worst Day           :      -5.97%
+
+
+====================================================================================================
+TESTING PERIOD RESULTS
+====================================================================================================
+
+Period: 2024-07-01 to 2024-12-31
+
+Strategy Performance:
+  Total Return        :      -6.25%
+  CAGR                :     -12.21%
+  Sharpe Ratio        :      -0.54
+  Max Drawdown        :     -14.34%
+
+Relative Performance:
+  Alpha               :      -4.19%
+  Outperformance      :      -4.19%
+
+Trading Statistics:
+  Number of Trades    :         17
+  Avg Turnover        :     124.56%
+  Total Costs         :       2.33%
+  Win Rate            :      49.60%
+  Best Day            :       2.34%
+  Worst Day           :      -2.72%
+
+
+====================================================================================================
+PAPER_TRADING_2025 PERIOD RESULTS
+====================================================================================================
+
+Period: 2025-01-01 to 2025-12-23
+
+Strategy Performance:
+  Total Return        :      10.41%
+  CAGR                :      10.77%
+  Sharpe Ratio        :       1.27
+  Max Drawdown        :      -8.07%
+
+Relative Performance:
+  Alpha               :       0.16%
+  Outperformance      :       0.16%
+
+Trading Statistics:
+  Number of Trades    :         35
+  Avg Turnover        :     117.58%
+  Total Costs         :       4.53%
+  Win Rate            :      49.18%
+  Best Day            :       3.89%
+  Worst Day           :      -2.85%
