@@ -1,236 +1,314 @@
-📈 Hybrid XGBoost + LSTM Quantitative Trading Strategy
+# 📈 Hybrid XGBoost + LSTM Quantitative Trading Strategy  
+### *NIFTY 50 Universe | Indian Equity Markets*  
+<br>
 
-NIFTY 50 Universe | Indian Equity Markets
+<p align="center">
+  <strong>
+    A hybrid machine learning–driven quantitative equity strategy combining<br>
+    cross-sectional and time-series models for Indian stock markets
+  </strong>
+</p>
 
-This repository implements a hybrid machine learning–based quantitative trading strategy for Indian equities.
-The system combines XGBoost (cross-sectional alpha model) and LSTM (time-series model) to rank stocks weekly and construct a long-only, equal-weighted portfolio, benchmarked against the NIFTY 50 index.
+<br>
 
-The strategy is backtested on 2024 data and additionally validated through full-year paper trading in 2025 to assess real-time robustness.
+---
 
-📌 Strategy Summary
+## ✨ Overview  
+<br>
 
-Universe: NSE equities (2017 NIFTY universe with survivorship handling)
+This repository implements a **hybrid ML-based quantitative trading system** for Indian equities.<br>
+The strategy combines:
 
-Benchmark: NIFTY 50 Index (^NSEI)
+- **XGBoost** → Cross-sectional alpha generation  
+- **LSTM** → Time-series pattern learning  
 
-Rebalancing Frequency: Weekly (Fridays)
+<br>
 
-Portfolio Type: Long-only
+Stocks are **ranked weekly**, and a **long-only, equal-weighted portfolio** is constructed and<br>
+benchmarked against the **NIFTY 50 index**.
 
-Stock Selection: Top-K ranked stocks
+<br>
 
-Weighting Scheme: Equal weight
+✔️ Backtested on **2024**  
+<br>
+✔️ Validated via **full-year paper trading in 2025**
 
-🧠 Machine Learning Architecture
-1️⃣ XGBoost – Cross-Sectional Alpha Model
+<br>
 
-Trained on all stocks pooled together
+---
 
-Predicts forward returns over a fixed horizon
+## 📌 Strategy Summary  
+<br>
 
-Captures relative strength and factor-based alpha
+Universe : NSE equities (2017 NIFTY universe)
+Benchmark : NIFTY 50 (^NSEI)
+Rebalancing : Weekly (Fridays)
+Portfolio Type : Long-only
+Selection : Top-K ranked stocks
+Weighting : Equal-weight
 
-Particularly effective for ranking stocks cross-sectionally
+yaml
+Copy code
 
-2️⃣ LSTM – Time-Series Model
+<br>
 
-Trained per stock using rolling sequences
+---
 
-Learns temporal dependencies in historical features
+## 🧠 Machine Learning Architecture  
+<br>
 
-Lookback window: 60 trading days
+### 🔹 1. XGBoost – Cross-Sectional Alpha Model  
+<br>
 
-Complements XGBoost by capturing dynamic market regimes
+- Trained on **all stocks pooled together**  
+- Predicts **forward returns**  
+- Learns **relative stock strength**  
+- Effective for factor-style ranking  
 
-3️⃣ Ensemble Scoring
+<br>
 
-Final stock score is computed as a weighted ensemble:
+---
 
-Final Score = w_xgb × XGBoost Prediction + w_lstm × LSTM Prediction
+### 🔹 2. LSTM – Time-Series Model  
+<br>
 
+- Trained **per stock**  
+- Rolling **60-day lookback window**  
+- Captures **temporal dependencies & regime shifts**  
+- Complements XGBoost’s static cross-sectional view  
 
-Default weights:
+<br>
 
-XGBoost: 0.8
+---
 
-LSTM: 0.2
+### 🔹 3. Ensemble Scoring  
+<br>
 
-This weighting prioritizes cross-sectional alpha while retaining temporal context.
+Final ranking score:
 
-📊 Feature Engineering
+Final Score = w_xgb × XGB_Prediction + w_lstm × LSTM_Prediction
 
-Each stock is represented using a rich set of technical and statistical features:
+markdown
+Copy code
 
-🔁 Returns & Momentum
+<br>
 
-ret1, ret5, ret10
+**Default Weights**  
+<br>
+- 🟦 XGBoost: **0.8**  
+- 🟥 LSTM: **0.2**
 
-mom20
+<br>
 
-📉 Volatility
+---
 
-vol20, vol60
+## 📊 Feature Engineering  
+<br>
 
-📈 Trend Indicators
+Each stock is represented using the following features:
 
-sma10, sma20, sma50, sma200
+<br>
 
-⚠️ Risk & Range
+### 🔁 Returns & Momentum  
+- `ret1`, `ret5`, `ret10`  
+- `mom20`
 
-True Range (tr)
+<br>
 
-Average True Range (atr14)
+### 📉 Volatility  
+- `vol20`, `vol60`
 
-🚀 Momentum Indicators
+<br>
 
-rsi14
+### 📈 Trend Indicators  
+- `sma10`, `sma20`, `sma50`, `sma200`
 
-macd, macd_signal, macd_hist
+<br>
 
-📦 Volume-Based Features
+### ⚠️ Risk & Range  
+- True Range (`tr`)  
+- Average True Range (`atr14`)
 
-Log-volume z-score (20-day)
+<br>
 
-5-day volume change
+### 🚀 Momentum Indicators  
+- `rsi14`  
+- `macd`, `macd_signal`, `macd_hist`
 
-🎯 Target Variable
+<br>
+
+### 📦 Volume-Based Features  
+- Log-volume z-score (20-day)  
+- 5-day volume change
+
+<br>
+
+---
+
+### 🎯 Target Variable  
+<br>
+
 Forward Return = Close(t + horizon) / Close(t) − 1
 
-⏱ Data Splits
-Phase	Date Range
-Training	2010-01-01 → 2021-12-31
-Validation	2022-01-01 → 2023-12-31
-Backtest (Test)	2024-01-01 → 2024-12-31
+yaml
+Copy code
 
-Strict chronological splitting ensures no look-ahead bias.
+<br>
 
-💼 Backtesting Framework
+---
 
-Weekly rebalancing on Fridays
+## ⏱ Data Splits  
+<br>
 
-Transaction Costs Applied:
+| Phase | Date Range |
+|------|-----------|
+| 🧪 Training | 2010-01-01 → 2021-12-31 |
+| 🔍 Validation | 2022-01-01 → 2023-12-31 |
+| 📈 Backtest | 2024-01-01 → 2024-12-31 |
 
-Brokerage / fees: 10 bps
+<br>
 
-Slippage: 5 bps
+✔️ Strict chronological splitting  
+<br>
+✔️ No look-ahead bias  
 
-Equal-weight allocation across selected stocks
+<br>
 
-Portfolio fully rebalanced each week
+---
 
-📐 Performance Metrics
+## 💼 Backtesting Framework  
+<br>
 
-The following metrics are computed and reported:
+- 🔄 Weekly rebalancing (Fridays)  
+- ⚖️ Equal-weight allocation  
+- 💸 Transaction costs applied:  
+  - Brokerage: **10 bps**  
+  - Slippage: **5 bps**  
+- 🔁 Full portfolio rebalance each cycle  
 
-CAGR
+<br>
 
-Sharpe Ratio
+---
 
-Maximum Drawdown
+## 📐 Performance Metrics  
+<br>
 
-Equity Curve Comparison: Strategy vs NIFTY 50
+- 📈 CAGR  
+- 📊 Sharpe Ratio  
+- 📉 Maximum Drawdown  
+- 🆚 Strategy vs NIFTY 50 equity curve  
+- 🗓 Monthly return table (2024)
 
-Monthly Return Table (2024)
+<br>
 
-📈 Outputs & Results
+---
 
-Strategy vs Benchmark equity curves
+## 📈 Outputs  
+<br>
 
-Monthly and cumulative return tables
+- Equity curve plots  
+- Monthly & cumulative returns  
+- Console-printed performance statistics  
+- Trade-level logs (paper trading)
 
-Console-printed performance statistics
+<br>
 
-Trade-level logs (during paper trading)
+---
 
-🧪 Live Paper Trading Validation (2025)
+## 🧪 Live Paper Trading Validation (2025)  
+<br>
 
-To validate robustness beyond historical backtests:
+- 📅 Full-year paper trading conducted in 2025  
+- 🧠 Same universe, features, models, and parameters  
+- 💸 Same transaction cost assumptions  
+- 🚫 No real capital deployed  
+- ⚙️ Trades executed in simulated live conditions  
 
-Full-year paper trading conducted in 2025
+<br>
 
-Same:
+This phase helped evaluate:<br>
+- Drawdown behavior  
+- Turnover stability  
+- Real-time model robustness  
 
-Universe
+<br>
 
-Features
+---
 
-Models
+## ⚙️ Configuration  
+<br>
 
-Parameters
+All strategy parameters are controlled via a centralized `CFG` dictionary:
 
-Transaction cost assumptions
+- Lookback window  
+- Prediction horizon  
+- Top-K selection  
+- Model hyperparameters  
+- Transaction costs  
+- Ensemble weights  
 
-No real capital deployed
+<br>
 
-Trades executed in a simulated live environment
+✔️ Easy experimentation  
+<br>
+✔️ Fully reproducible  
 
-Portfolio decisions generated in real time
+<br>
 
-This helped evaluate:
+## 🚀 How to Run  
+<br>
 
-Live drawdowns
+### 1️⃣ Install Dependencies  
 
-Turnover behavior
-
-Stability under unseen market conditions
-
-⚙️ Configuration
-
-All strategy parameters are controlled via a centralized CFG dictionary, including:
-
-Lookback window
-
-Prediction horizon
-
-Top-K stock selection
-
-Model hyperparameters
-
-Transaction cost assumptions
-
-Ensemble weights
-
-This design allows easy experimentation and reproducibility.
-
-🚀 How to Run
-1️⃣ Install Dependencies
 pip install numpy pandas yfinance xgboost torch matplotlib
+<br>
 
-2️⃣ Run the Strategy
+### 2️⃣ Run the Strategy
+bash
+Copy code
 python main.py
-
-
-CUDA is automatically used if available
-
-Falls back to CPU otherwise
+<br>
+⚡ CUDA is used automatically if available
+<br>
+🖥 CPU fallback is enabled otherwise
+<br>
 
 🧪 Reproducibility
-
+<br>
 Fixed random seeds for NumPy and PyTorch
-
+<br>
 Deterministic behavior where supported
+<br>
+Consistent results across runs (hardware permitting)
 
-Identical results reproducible across runs (subject to hardware differences)
-
+<br>
 📌 Notes & Limitations
-
-Survivorship bias partially mitigated via symbol alias handling
-
-No short selling
-
-Corporate actions handled via raw OHLCV data (no auto-adjust)
-
-Designed for research and educational purposes only
-
+<br>
+⚠️ Survivorship bias partially mitigated
+<br>
+🚫 No short selling
+<br>
+📊 Raw OHLCV data used (no auto-adjustment)
+<br>
+🎓 Intended for research and educational purposes only
+<br>
+<br>
 📜 Disclaimer
-
+<br>
 This project is not financial advice.
 Past performance does not guarantee future results.
 Use at your own risk.
 
+<br>
+<br>
+<br>
 👤 Authors
+<br>
+Jishnu · Rathan · Samhitha
+<br>
 
-Developed by Jishnu, Rathan, and Samhitha
-Hybrid ML-based quantitative equity strategy for Indian markets.
 
-⭐ If you find this project useful, consider starring the repository.
+Hybrid ML-based quantitative equity strategy for Indian markets
+
+<br>
+⭐ If you find this repository useful, consider starring it.
