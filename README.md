@@ -1,195 +1,236 @@
-# Hybrid XGBoost + LSTM Quantitative Trading Strategy (NIFTY 50 Universe)
+📈 Hybrid XGBoost + LSTM Quantitative Trading Strategy
 
-This repository implements a **hybrid machine learning trading strategy** for Indian equities using **XGBoost (cross-sectional model)** and **LSTM (time-series model)**. The strategy ranks stocks weekly and backtests a **top-k equal-weighted portfolio** against the **NIFTY 50 index** for the year 2024.
+NIFTY 50 Universe | Indian Equity Markets
 
----
+This repository implements a hybrid machine learning–based quantitative trading strategy for Indian equities.
+The system combines XGBoost (cross-sectional alpha model) and LSTM (time-series model) to rank stocks weekly and construct a long-only, equal-weighted portfolio, benchmarked against the NIFTY 50 index.
 
-## 📌 Strategy Overview
+The strategy is backtested on 2024 data and additionally validated through full-year paper trading in 2025 to assess real-time robustness.
 
-* **Universe**: NSE stocks (2017 NIFTY universe with survivorship handling)
-* **Index Benchmark**: NIFTY 50 (`^NSEI`)
-* **Models Used**:
+📌 Strategy Summary
 
-  * **XGBoost Regressor** – learns cross-sectional alpha from engineered features
-  * **LSTM Regressor** – learns temporal patterns from rolling lookback windows
-* **Final Score**: Weighted ensemble of XGBoost and LSTM predictions
-* **Rebalancing**: Weekly (Fridays)
-* **Portfolio Construction**:
+Universe: NSE equities (2017 NIFTY universe with survivorship handling)
 
-  * Long-only
-  * Top-K ranked stocks
-  * Equal weight allocation
+Benchmark: NIFTY 50 Index (^NSEI)
 
----
+Rebalancing Frequency: Weekly (Fridays)
 
-## 🧠 Machine Learning Architecture
+Portfolio Type: Long-only
 
-### 1. XGBoost (Cross-Sectional Model)
+Stock Selection: Top-K ranked stocks
 
-* Trained on all stocks pooled together
-* Predicts **forward returns over a fixed horizon**
-* Captures relative stock strength across the universe
+Weighting Scheme: Equal weight
 
-### 2. LSTM (Time-Series Model)
+🧠 Machine Learning Architecture
+1️⃣ XGBoost – Cross-Sectional Alpha Model
 
-* Separate rolling sequences per stock
-* Learns temporal dependencies from historical features
-* Uses **lookback window of 60 trading days**
+Trained on all stocks pooled together
 
-### 3. Ensemble Scoring
+Predicts forward returns over a fixed horizon
 
-```text
-Final Score = w_xgb × XGB_Prediction + w_lstm × LSTM_Prediction
-```
+Captures relative strength and factor-based alpha
+
+Particularly effective for ranking stocks cross-sectionally
+
+2️⃣ LSTM – Time-Series Model
+
+Trained per stock using rolling sequences
+
+Learns temporal dependencies in historical features
+
+Lookback window: 60 trading days
+
+Complements XGBoost by capturing dynamic market regimes
+
+3️⃣ Ensemble Scoring
+
+Final stock score is computed as a weighted ensemble:
+
+Final Score = w_xgb × XGBoost Prediction + w_lstm × LSTM Prediction
+
 
 Default weights:
 
-* XGBoost: **0.8**
-* LSTM: **0.2**
+XGBoost: 0.8
 
----
+LSTM: 0.2
 
-## 📊 Feature Engineering
+This weighting prioritizes cross-sectional alpha while retaining temporal context.
 
-The following technical and statistical features are computed per stock:
+📊 Feature Engineering
 
-* Returns: `ret1`, `ret5`, `ret10`, `mom20`
-* Volatility: `vol20`, `vol60`
-* Trend: `sma10`, `sma20`, `sma50`, `sma200`
-* Range & Risk: `tr`, `atr14`
-* Momentum Indicators: `rsi14`, `macd`, `macd_sig`, `macd_hist`
-* Volume-based:
+Each stock is represented using a rich set of technical and statistical features:
 
-  * Log-volume z-score (20-day)
-  * 5-day volume change
+🔁 Returns & Momentum
 
-Target Variable:
+ret1, ret5, ret10
 
-```text
-Forward Return = Close(t + horizon) / Close(t) - 1
-```
+mom20
 
----
+📉 Volatility
 
-## ⏱ Data Splits
+vol20, vol60
 
-| Split           | Date Range              |
-| --------------- | ----------------------- |
-| Train           | 2010-01-01 → 2021-12-31 |
-| Validation      | 2022-01-01 → 2023-12-31 |
-| Test (Backtest) | 2024-01-01 → 2024-12-31 |
+📈 Trend Indicators
 
----
+sma10, sma20, sma50, sma200
 
-## 💼 Backtesting Logic
+⚠️ Risk & Range
 
-* Weekly rebalancing on **Fridays**
-* Portfolio turnover cost applied:
+True Range (tr)
 
-  * Transaction cost: **10 bps**
-  * Slippage: **5 bps**
-* Equal-weight allocation across selected stocks
+Average True Range (atr14)
 
-### Performance Metrics
+🚀 Momentum Indicators
 
-* CAGR
-* Sharpe Ratio
-* Maximum Drawdown
-* Benchmark comparison (NIFTY)
+rsi14
 
----
+macd, macd_signal, macd_hist
 
-## 📈 Outputs
+📦 Volume-Based Features
 
-### Paper Trading (2025)
+Log-volume z-score (20-day)
 
-In addition to historical backtesting, this strategy was **paper traded for the entire year 2025** using the same logic, parameters, and rebalancing rules.
+5-day volume change
 
-* No real capital was deployed
+🎯 Target Variable
+Forward Return = Close(t + horizon) / Close(t) − 1
 
-* Trades were executed in a simulated environment
+⏱ Data Splits
+Phase	Date Range
+Training	2010-01-01 → 2021-12-31
+Validation	2022-01-01 → 2023-12-31
+Backtest (Test)	2024-01-01 → 2024-12-31
 
-* Portfolio decisions were generated live using model predictions
+Strict chronological splitting ensures no look-ahead bias.
 
-* This helped validate strategy robustness beyond the backtest period
+💼 Backtesting Framework
 
-* Equity curve comparison:
+Weekly rebalancing on Fridays
 
-  * Strategy vs NIFTY
+Transaction Costs Applied:
 
-* Monthly return table (2024)
+Brokerage / fees: 10 bps
 
-* Performance statistics printed to console
+Slippage: 5 bps
 
----
+Equal-weight allocation across selected stocks
 
-## ⚙️ Configuration
+Portfolio fully rebalanced each week
 
-All strategy parameters are controlled via the `CFG` dictionary:
+📐 Performance Metrics
 
-Key parameters include:
+The following metrics are computed and reported:
 
-* Lookback window
-* Prediction horizon
-* Top-K stocks
-* Model hyperparameters
-* Cost assumptions
+CAGR
 
----
+Sharpe Ratio
 
-## 🚀 How to Run
+Maximum Drawdown
 
-### 1. Install Dependencies
+Equity Curve Comparison: Strategy vs NIFTY 50
 
-```bash
+Monthly Return Table (2024)
+
+📈 Outputs & Results
+
+Strategy vs Benchmark equity curves
+
+Monthly and cumulative return tables
+
+Console-printed performance statistics
+
+Trade-level logs (during paper trading)
+
+🧪 Live Paper Trading Validation (2025)
+
+To validate robustness beyond historical backtests:
+
+Full-year paper trading conducted in 2025
+
+Same:
+
+Universe
+
+Features
+
+Models
+
+Parameters
+
+Transaction cost assumptions
+
+No real capital deployed
+
+Trades executed in a simulated live environment
+
+Portfolio decisions generated in real time
+
+This helped evaluate:
+
+Live drawdowns
+
+Turnover behavior
+
+Stability under unseen market conditions
+
+⚙️ Configuration
+
+All strategy parameters are controlled via a centralized CFG dictionary, including:
+
+Lookback window
+
+Prediction horizon
+
+Top-K stock selection
+
+Model hyperparameters
+
+Transaction cost assumptions
+
+Ensemble weights
+
+This design allows easy experimentation and reproducibility.
+
+🚀 How to Run
+1️⃣ Install Dependencies
 pip install numpy pandas yfinance xgboost torch matplotlib
-```
 
-### 2. Run the Script
-
-```bash
+2️⃣ Run the Strategy
 python main.py
-```
 
-(Ensure CUDA is available for GPU acceleration, otherwise CPU is used automatically.)
 
----
+CUDA is automatically used if available
 
-## 🧪 Reproducibility
+Falls back to CPU otherwise
 
-* Random seeds fixed for NumPy and PyTorch
-* Deterministic training behavior (where possible)
+🧪 Reproducibility
 
----
+Fixed random seeds for NumPy and PyTorch
 
-## 📌 Notes & Limitations
+Deterministic behavior where supported
 
-* Survivorship bias partially mitigated via symbol aliases
-* No short selling
-* Corporate actions handled via raw OHLCV (no auto-adjust)
-* Designed for **research and educational purposes only**
+Identical results reproducible across runs (subject to hardware differences)
 
----
+📌 Notes & Limitations
 
-## 🧪 Live Paper Trading Validation
+Survivorship bias partially mitigated via symbol alias handling
 
-* Full-year **paper trading conducted during 2025**
-* Same universe, features, models, and transaction cost assumptions
-* Used to observe real-time behavior, drawdowns, and turnover
+No short selling
 
----
+Corporate actions handled via raw OHLCV data (no auto-adjust)
 
-## 📜 Disclaimer
+Designed for research and educational purposes only
 
-This project is **not financial advice**. Past performance does not guarantee future results. Use at your own risk.
+📜 Disclaimer
 
----
+This project is not financial advice.
+Past performance does not guarantee future results.
+Use at your own risk.
 
-## 👤 Author
+👤 Authors
 
-Developed by **Jishnu, Rathan and Samhitha**
+Developed by Jishnu, Rathan, and Samhitha
 Hybrid ML-based quantitative equity strategy for Indian markets.
 
----
-
-⭐ If you find this useful, consider starring the repository.
+⭐ If you find this project useful, consider starring the repository.
