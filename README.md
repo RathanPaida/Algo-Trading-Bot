@@ -1,44 +1,48 @@
 # Hybrid XGBoost + LSTM Quantitative Trading System
 
-A research-oriented quantitative equity ranking and backtesting system for Indian equities.
+A quantitative equity ranking and backtesting system for Indian stocks that combines **XGBoost** and **LSTM** models to predict forward returns, rank stocks, construct portfolios, and evaluate trading performance against the NIFTY 50 benchmark.
 
-The project combines a cross-sectional XGBoost model with a time-series LSTM model to estimate forward stock returns, rank securities, construct a long-only portfolio, and evaluate the strategy against the NIFTY 50 benchmark.
+The project is designed as a research-oriented end-to-end pipeline covering data collection, feature engineering, machine learning, portfolio construction, backtesting, risk analysis, and visualization.
+
+---
 
 ## Overview
 
-The pipeline includes:
+The system:
 
-- Historical OHLCV data collection using Yahoo Finance
-- Technical and statistical feature engineering
-- XGBoost-based cross-sectional return prediction
-- LSTM-based time-series prediction
-- Weighted model ensembling
-- Weekly stock ranking and portfolio construction
-- Volatility-based position sizing
-- Momentum filtering
-- Sector exposure constraints
-- Stop-loss handling
-- Transaction cost and slippage modelling
-- Chronological validation and testing
-- 2025 simulated paper evaluation
-- Performance analysis and visualization
+- Downloads historical market data using `yfinance`
+- Engineers technical and statistical features
+- Predicts future stock returns using XGBoost
+- Models temporal behaviour using an LSTM
+- Combines both predictions through a weighted ensemble
+- Ranks stocks according to predicted forward returns
+- Constructs a long-only portfolio from the highest-ranked stocks
+- Rebalances the portfolio weekly
+- Models transaction costs and slippage
+- Applies momentum, volatility, sector exposure, and stop-loss constraints
+- Evaluates the strategy on chronologically separated validation and test periods
+- Performs a simulated 2025 paper evaluation
+- Generates detailed performance reports, plots, and transaction records
+
+---
 
 ## Model Architecture
 
 ### XGBoost
 
-The XGBoost model learns cross-sectional relationships between engineered market features and future returns across multiple stocks.
+XGBoost is used to learn cross-sectional relationships between engineered market features and future stock returns.
+
+At each point in time, the model compares characteristics across multiple stocks and estimates their expected forward returns.
 
 ### LSTM
 
-The LSTM processes rolling 90-day feature sequences to capture temporal behaviour in individual stocks.
+The LSTM model captures time-dependent behaviour using rolling historical sequences.
 
-### Ensemble
-
-The final prediction score combines both models:
+Each sample contains:
 
 ```text
-Final Score =
-0.60 × XGBoost Prediction
-+
-0.40 × LSTM Prediction
+90 trading days of historical features
+            ↓
+          LSTM
+            ↓
+Predicted 5-day forward return
