@@ -631,19 +631,17 @@ jupyter
 
 # Running the Project
 
-Start Jupyter:
+The notebook has been refactored into the `equity_intel` Python package
+(the original notebook is kept in `notebooks/archive/`).
 
 ```bash
-python -m jupyter notebook
+pip install -e .
+python -m equity_intel run          # full pipeline
+python -m equity_intel run --quick  # fast smoke run (25 stocks, fewer trees/epochs)
+python -m pytest                    # unit tests, incl. look-ahead leakage tests
 ```
 
-Then open:
-
-```text
-notebooks/hybrid_trading_system.ipynb
-```
-
-Run the notebook cells sequentially.
+All settings live in `config/config.yaml`.
 
 The pipeline will:
 

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "equity-intel"
+version = "2.0.0"
+description = "Data, ML, risk-analytics and GenAI platform for NIFTY 50 equities"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.scripts]
+equity-intel = "equity_intel.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["equity_intel*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E501", "B905"]

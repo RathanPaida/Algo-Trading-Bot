@@ -1,9 +1,16 @@
-numpy
-pandas
-yfinance
-xgboost
-scikit-learn
-torch
-matplotlib
-seaborn
-jupyter
+# Core data + ML
+numpy==2.2.6
+pandas==2.3.3
+pyarrow==25.0.0
+yfinance==0.2.66
+scikit-learn==1.7.2
+xgboost==2.1.1
+torch>=2.2            # install the CUDA build from pytorch.org for GPU training
+pyyaml==6.0.3
+
+# Charts
+matplotlib==3.10.8
+
+# Development
+pytest==9.0.2
+ruff

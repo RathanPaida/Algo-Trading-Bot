@@ -1,13 +1,26 @@
+# Python
 __pycache__/
 *.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
 
+# Notebooks
 .ipynb_checkpoints/
 
+# Environments and secrets
 .venv/
 venv/
 env/
+.env
 
+# Generated data and models (rebuilt by the pipeline)
+/data/
+/models/
+/mlruns/
+mlflow.db
+
+# Editors / OS
 .vscode/
-
 .DS_Store
 Thumbs.db

@@ -1,0 +1,73 @@
+# ---------------------------------------------------------------
+# Central configuration for the Equity Intelligence Platform.
+# Every number the pipeline uses lives here, so experiments are
+# changed by editing this file - not by editing code.
+# ---------------------------------------------------------------
+
+project:
+  name: equity-intelligence-platform
+  seed: 42
+
+data:
+  start: "2010-01-01"
+  end: null            # null = up to today
+  benchmark: "^NSEI"   # NIFTY 50 index
+  min_days: 850        # a stock needs this many trading days to be used
+
+features:
+  horizon: 5           # predict the return over the next 5 trading days
+  lookback: 90         # LSTM sees the last 90 days of features
+
+splits:
+  train_end: "2023-12-31"
+  val_start: "2024-01-01"
+  val_end: "2024-06-30"
+
+# Out-of-sample periods that are backtested and reported.
+# end: null means "up to the latest available date".
+evaluation_periods:
+  Validation:       ["2024-01-01", "2024-06-30"]
+  Testing:          ["2024-07-01", "2024-12-31"]
+  Holdout_2025:     ["2025-01-01", "2025-12-31"]
+  Holdout_2026_YTD: ["2026-01-01", null]
+
+models:
+  xgb:
+    n_estimators: 2000
+    learning_rate: 0.015
+    max_depth: 7
+    subsample: 0.85
+    colsample_bytree: 0.85
+    reg_lambda: 1.5
+    reg_alpha: 0.5
+    device: auto       # auto | cpu | cuda
+  lstm:
+    epochs: 15
+    batch_size: 512
+    lr: 0.0005
+    hidden: 96
+    dropout: 0.2
+    patience: 3        # early-stopping patience (epochs)
+    device: auto
+  ensemble:
+    w_xgb: 0.6
+    w_lstm: 0.4
+
+portfolio:
+  top_k: 15
+  rebalance_weekday: 4         # 0 = Monday ... 4 = Friday
+  rebalance_threshold: 0.15    # skip a rebalance if turnover < 15%
+  use_volatility_sizing: true  # inverse-volatility weights
+  use_momentum_filter: true
+  min_momentum: 0.02           # 20-day momentum must be >= 2%
+  max_volatility: 0.50         # annualised volatility cap (50%)
+  sector_max_weight: 0.35
+  use_stop_loss: true
+  stop_loss_pct: -0.15
+  cost_bps: 8
+  slip_bps: 3
+
+paths:
+  data_dir: data
+  results_dir: results
+  models_dir: models
