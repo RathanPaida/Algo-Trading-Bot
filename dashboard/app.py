@@ -278,7 +278,10 @@ def page_sql():
         except Exception as e:  # SQL syntax errors etc.
             st.error(f"Query failed: {e}")
     with st.expander("Tables and columns"):
-        st.code(wh.schema_description(CFG), language="text")
+        try:
+            st.code(wh.schema_description(CFG), language="text")
+        except Exception:
+            st.info("Warehouse not built yet - run `python -m equity_intel run` first.")
 
 
 EXAMPLE_QUESTIONS = [
