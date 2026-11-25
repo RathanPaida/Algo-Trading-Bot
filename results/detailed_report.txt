@@ -1,88 +1,110 @@
-====================================================================================================
-COMPREHENSIVE TRADING SYSTEM REPORT
-====================================================================================================
+================================================================================
+EQUITY INTELLIGENCE PLATFORM - BACKTEST REPORT
+================================================================================
+Generated: 2026-11-25 22:47
 
-Generated: 2026-01-12 00:09:30
+Prediction horizon : 5 days
+LSTM lookback      : 90 days
+Portfolio size     : top 15 stocks
+Costs              : 8 bps + 3 bps slippage
+Ensemble           : 60% XGBoost + 40% LSTM
 
-Configuration:
-  Prediction Horizon: 5 days
-  Lookback Window: 90 days
-  Portfolio Size: Top 15 stocks
-  Transaction Costs: 8 bps
-  Slippage: 3 bps
-  Model Ensemble: 60% XGBoost + 40% LSTM
+--------------------------------------------------------------------------------
+Validation: 2024-01-01 to 2024-06-28
+--------------------------------------------------------------------------------
+  Total return     :    13.71%   (NIFTY 50: 10.43%)
+  Excess return    :     3.28%
+  CAGR             :    31.27%
+  Sharpe / Sortino :     1.88 / 2.00
+  Max drawdown     :    -6.77%
+  Volatility       :    18.34%
+  Rebalances       :       21   costs 2.61%
 
+--------------------------------------------------------------------------------
+Testing: 2024-07-01 to 2024-12-31
+--------------------------------------------------------------------------------
+  Total return     :    -5.10%   (NIFTY 50: -2.06%)
+  Excess return    :    -3.04%
+  CAGR             :   -10.02%
+  Sharpe / Sortino :    -0.39 / -0.56
+  Max drawdown     :   -15.08%
+  Volatility       :    13.02%
+  Rebalances       :       17   costs 2.30%
 
-====================================================================================================
-VALIDATION PERIOD RESULTS
-====================================================================================================
+--------------------------------------------------------------------------------
+Holdout_2025: 2025-01-01 to 2025-12-31
+--------------------------------------------------------------------------------
+  Total return     :    10.33%   (NIFTY 50: 10.05%)
+  Excess return    :     0.28%
+  CAGR             :    10.50%
+  Sharpe / Sortino :     1.26 / 1.94
+  Max drawdown     :    -7.73%
+  Volatility       :    12.10%
+  Rebalances       :       35   costs 4.41%
 
-Period: 2024-01-01 to 2024-06-28
+--------------------------------------------------------------------------------
+Holdout_2026_YTD: 2026-01-01 to 2026-11-23
+--------------------------------------------------------------------------------
+  Total return     :    -7.72%   (NIFTY 50: -3.05%)
+  Excess return    :    -4.67%
+  CAGR             :    -8.83%
+  Sharpe / Sortino :    -0.21 / -0.28
+  Max drawdown     :   -15.76%
+  Volatility       :    17.50%
+  Rebalances       :       28   costs 3.57%
 
-Strategy Performance:
-  Total Return        :      15.93%
-  CAGR                :      36.75%
-  Sharpe Ratio        :       2.17
-  Max Drawdown        :      -5.97%
+================================================================================
+TOTAL RETURN (%) - ML MODEL vs BASELINES
+================================================================================
+period                      Validation  Testing  Holdout_2025  Holdout_2026_YTD
+strategy                                                                       
+ML_Ensemble (static)             13.71    -5.10         10.33             -7.72
+NIFTY_50                         10.43    -2.06         10.05             -3.05
+ML_Ensemble (walk-forward)       15.11    -6.20          7.40             -7.35
+Equal_Weight                     13.85    -3.79         10.22             -0.96
+Momentum_Only                    15.48   -10.44         -0.31              1.18
+Random_Rank (mean of 10)         13.93    -6.76          4.00             -6.06
 
-Relative Performance:
-  Alpha               :       5.49%
-  Outperformance      :       5.49%
+================================================================================
+MODEL RANKING SKILL (mean daily IC) AND DIRECTION ACCURACY
+================================================================================
+                  XGB_IC  LSTM_IC  Ensemble_IC  Ensemble_Direction_Acc
+Training          0.4851   0.0655       0.4235                  0.6380
+Validation        0.0374   0.0077       0.0285                  0.5255
+Testing          -0.0153   0.0288       0.0027                  0.5124
+Holdout_2025      0.0181   0.0403       0.0230                  0.5167
+Holdout_2026_YTD  0.0007  -0.0299      -0.0107                  0.4554
 
-Trading Statistics:
-  Number of Trades    :         20
-  Avg Turnover        :     111.64%
-  Total Costs         :       2.46%
-  Win Rate            :      60.50%
-  Best Day            :       3.87%
-  Worst Day           :      -5.97%
+================================================================================
+CURRENT PORTFOLIO RISK (as of 2026-11-23)
+================================================================================
+  Holdings / effective N : 15 / 13.7
+  Volatility (annual)    : 14.23%
+  Beta vs NIFTY 50       : 0.89
+  1-day VaR 95%          : 1.57%  = INR 15,663 on INR 1,000,000
+  1-day CVaR 95%         : 2.04%
 
+STRESS TESTS
+             scenario         type  portfolio_return_pct  nifty_return_pct          worst_holding  weight_covered_pct                               description
+  Demonetisation_2016   historical                 -5.77             -7.44 ASIANPAINT.NS (-17.9%)               100.0                                       NaN
+     COVID_crash_2020   historical                -33.44            -37.24 INDUSINDBK.NS (-70.5%)               100.0                                       NaN
+      Rate_hikes_2022   historical                 -8.30            -16.47 BAJFINANCE.NS (-31.0%)               100.0                                       NaN
+Adani_Hindenburg_2023   historical                 -6.20             -4.49   ADANIENT.NS (-60.4%)               100.0                                       NaN
+   Correction_H2_2024   historical                -14.60            -10.81 INDUSINDBK.NS (-32.9%)               100.0                                       NaN
+    Market_down_10pct hypothetical                 -8.93               NaN                    NaN                 NaN NIFTY -10%, each stock moves beta x shock
+    Market_down_20pct hypothetical                -17.87               NaN                    NaN                 NaN NIFTY -20%, each stock moves beta x shock
+   Banking_down_15pct hypothetical                 -2.55               NaN                    NaN                 NaN                       Banking stocks -15%
+        IT_down_15pct hypothetical                 -0.00               NaN                    NaN                 NaN                            IT stocks -15%
 
-====================================================================================================
-TESTING PERIOD RESULTS
-====================================================================================================
-
-Period: 2024-07-01 to 2024-12-31
-
-Strategy Performance:
-  Total Return        :      -6.25%
-  CAGR                :     -12.21%
-  Sharpe Ratio        :      -0.54
-  Max Drawdown        :     -14.34%
-
-Relative Performance:
-  Alpha               :      -4.19%
-  Outperformance      :      -4.19%
-
-Trading Statistics:
-  Number of Trades    :         17
-  Avg Turnover        :     124.56%
-  Total Costs         :       2.33%
-  Win Rate            :      49.60%
-  Best Day            :       2.34%
-  Worst Day           :      -2.72%
-
-
-====================================================================================================
-PAPER_TRADING_2025 PERIOD RESULTS
-====================================================================================================
-
-Period: 2025-01-01 to 2025-12-23
-
-Strategy Performance:
-  Total Return        :      10.41%
-  CAGR                :      10.77%
-  Sharpe Ratio        :       1.27
-  Max Drawdown        :      -8.07%
-
-Relative Performance:
-  Alpha               :       0.16%
-  Outperformance      :       0.16%
-
-Trading Statistics:
-  Number of Trades    :         35
-  Avg Turnover        :     117.58%
-  Total Costs         :       4.53%
-  Win Rate            :      49.18%
-  Best Day            :       3.89%
-  Worst Day           :      -2.85%
+================================================================================
+DATA DRIFT (PSI vs training data) - most drifted features
+================================================================================
+ feature  Validation  Testing  Holdout_2025  Holdout_2026_YTD  Last_60_days status_recent
+   vol60       0.230    0.234         0.527             0.285         0.982         ALERT
+   atr14       0.231    0.510         0.735             0.357         0.656         ALERT
+  sma200       0.473    0.102         0.343             0.316         0.626         ALERT
+   mom60       0.161    0.033         0.148             0.219         0.483         ALERT
+macd_sig       0.092    0.021         0.127             0.133         0.357         ALERT
+    macd       0.085    0.025         0.115             0.100         0.274         ALERT
+   sma50       0.073    0.027         0.111             0.110         0.245          WARN
+   rsi21       0.023    0.027         0.010             0.062         0.228          WARN

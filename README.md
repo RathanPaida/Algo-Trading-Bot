@@ -1,884 +1,219 @@
-# Hybrid XGBoost + LSTM Quantitative Trading System
+# Equity Intelligence Platform
 
-An end-to-end quantitative equity research and backtesting system for Indian equities.
+**An end-to-end data, machine-learning, risk-analytics and GenAI platform for NIFTY 50 equities.**
 
-The project combines **XGBoost** and a **Long Short-Term Memory (LSTM)** network to predict short-horizon stock returns, rank securities, construct a long-only portfolio, and evaluate its performance against the **NIFTY 50** benchmark.
+It ingests 16 years of daily market data into a layered data pipeline with automated quality
+checks, ranks stocks with an XGBoost + LSTM ensemble, backtests a cost-aware portfolio, measures
+its market risk the way a bank risk team would (VaR, CVaR, beta, stress tests), monitors the model
+for drift, explains every prediction with SHAP, and lets users query the results in plain English.
 
-The pipeline covers the complete workflow from market-data collection and feature engineering to model training, portfolio construction, transaction-cost-aware backtesting, and performance analysis.
+![Dashboard overview](docs/images/dash_Overview.png)
 
----
-
-## Overview
-
-The system:
-
-- Downloads historical OHLCV market data using Yahoo Finance
-- Builds technical, momentum, volatility, trend, volume, and candlestick features
-- Predicts 5-day forward returns using XGBoost
-- Learns temporal patterns from 90-day sequences using an LSTM
-- Combines both models using a weighted ensemble
-- Ranks stocks according to predicted forward returns
-- Selects the highest-ranked stocks for a long-only portfolio
-- Rebalances the portfolio weekly
-- Uses inverse-volatility-based position sizing
-- Applies momentum and volatility filters
-- Limits sector concentration
-- Models transaction costs and slippage
-- Supports stop-loss logic
-- Evaluates performance using chronological validation and testing periods
-- Runs a separate simulated 2025 evaluation
-- Generates detailed strategy, model, trade, and risk analytics
+> Historical simulation for research and education - not investment advice.
 
 ---
 
-## System Architecture
+## What the platform does
 
-```text
-Historical Market Data
-        |
-        v
-Data Cleaning & Normalization
-        |
-        v
-Feature Engineering
-        |
-        v
-5-Day Forward Return Target
-        |
-        +-----------------------+
-        |                       |
-        v                       v
-    XGBoost                   LSTM
-Cross-Sectional          Time-Series Model
-    Model                (90-Day Sequences)
-        |                       |
-        +-----------+-----------+
-                    |
-                    v
-             Weighted Ensemble
-          60% XGBoost + 40% LSTM
-                    |
-                    v
-                Ranking
-                    |
-                    v
-          Portfolio Construction
-                    |
-                    v
-        Risk & Exposure Controls
-                    |
-                    v
-            Weekly Rebalancing
-                    |
-                    v
-      Transaction Costs + Slippage
-                    |
-                    v
-                Backtest
-                    |
-                    v
-         Performance Evaluation
+| Area | What is built | Where |
+|---|---|---|
+| **Data engineering** | Incremental ingestion of 51 stocks + NIFTY 50 (Yahoo Finance) into a bronze → silver → gold layout: raw Parquet, validated Parquet, DuckDB warehouse (star schema, 14 tables, 7 BI views) | `equity_intel/data/` |
+| **Data quality** | pandera schema checks + market checks (calendar gaps, stale tickers, extreme moves, flat prices) → PASS / WARN / FAIL per ticker; corporate-actions master for unadjusted splits / demergers | `equity_intel/data/quality.py`, `config/corporate_actions.yaml` |
+| **SQL & BI** | 12 business questions answered in SQL, reusable views, Parquet export + data-model guide for Power BI | `sql/`, `docs/powerbi_guide.md` |
+| **Machine learning** | 39 engineered features, XGBoost (cross-sectional) + 2-layer LSTM (90-day sequences, PyTorch, GPU), weighted ensemble, label-leakage embargo, walk-forward retraining | `equity_intel/features.py`, `equity_intel/models/` |
+| **Model governance** | Baselines (equal-weight, momentum, random ranking), Information Coefficient, SHAP explanations, PSI drift monitoring, MLflow experiment tracking | `baselines.py`, `explain.py`, `monitoring.py`, `tracking.py` |
+| **Portfolio & risk** | Weekly top-15 portfolio with inverse-volatility sizing, sector cap, costs + slippage; VaR / CVaR (INR), beta, CAPM alpha, tracking error, risk contribution per holding, 5 historical + 4 hypothetical stress tests | `backtest.py`, `risk.py` |
+| **Generative AI** | Natural-language questions → SQL → answer (read-only guard rails, auto-repair), AI-written portfolio note with a number-grounding check; Claude (official SDK), local Ollama or offline | `equity_intel/genai/` |
+| **Applications** | Streamlit dashboard (7 pages), FastAPI REST service with Swagger docs, CLI | `dashboard/`, `api/`, `equity_intel/cli.py` |
+| **Engineering** | 71 pytest tests (incl. look-ahead-leakage tests), ruff lint, Docker + docker-compose, GitHub Actions CI and a scheduled daily data job | `tests/`, `Dockerfile`, `.github/workflows/` |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    YF[Yahoo Finance] -->|incremental ingest| RAW[(Bronze<br/>raw Parquet)]
+    RAW -->|quality checks +<br/>corporate actions| CLEAN[(Silver<br/>clean Parquet)]
+    CLEAN --> FEAT[39 features<br/>+ 5-day target]
+    FEAT --> XGB[XGBoost] & LSTM[LSTM]
+    XGB & LSTM --> ENS[Ensemble score]
+    ENS --> BT[Backtest<br/>costs, sector cap]
+    ENS --> DIAG[Baselines · walk-forward<br/>SHAP · PSI drift · IC]
+    BT --> RISK[VaR · CVaR · beta<br/>stress tests]
+    BT & DIAG & RISK --> WH[(Gold<br/>DuckDB warehouse)]
+    WH --> DASH[Streamlit dashboard]
+    WH --> API[FastAPI]
+    WH --> AI[GenAI analyst<br/>text-to-SQL · commentary]
+    WH --> BI[Power BI export]
+    DIAG -.-> MLF[MLflow]
 ```
 
 ---
 
-## Dataset and Market Universe
-
-The system uses historical price and volume data downloaded through `yfinance`.
-
-The current universe is based on a selected set of NIFTY 50 equities, while:
-
-```text
-^NSEI
-```
-
-is used as the benchmark index.
-
-Historical data is requested from:
-
-```text
-2010-01-01 to 2025-12-31
-```
-
-A minimum amount of historical data is required before a stock is included in the modelling pipeline.
-
----
-
-## Feature Engineering
-
-The system currently generates **39 features** for every stock.
-
-### Returns and Momentum
-
-```text
-ret1
-ret3
-ret5
-ret10
-ret20
-mom20
-mom60
-roc10
-roc20
-```
-
-### Volatility
-
-```text
-vol5
-vol20
-vol60
-vol_ratio
-```
-
-### Moving Averages and Trend
-
-```text
-sma10
-sma20
-sma50
-sma200
-sma_cross
-```
-
-### True Range and ATR
-
-```text
-tr
-atr14
-atr_z
-```
-
-### RSI
-
-```text
-rsi7
-rsi14
-rsi21
-```
-
-### MACD
-
-```text
-macd
-macd_sig
-macd_hist
-macd_cross
-```
-
-### Bollinger Bands
-
-```text
-bb_upper
-bb_lower
-bb_width
-bb_position
-```
-
-### Volume Features
-
-```text
-logvol_z20
-vol_chg5
-vol_sma_ratio
-```
-
-### Price and Candlestick Structure
-
-```text
-high_low_ratio
-close_open
-upper_shadow
-lower_shadow
-```
-
-The prediction target is the stock's forward return over the next:
-
-```text
-5 trading days
-```
-
----
-
-# Models
-
-## 1. XGBoost
-
-XGBoost learns cross-sectional nonlinear relationships between engineered features and future stock returns.
-
-The current model uses:
-
-```text
-Estimators:          2000
-Learning rate:       0.015
-Maximum depth:       7
-Subsample:           0.85
-Column sample:       0.85
-L2 regularization:   1.5
-L1 regularization:   0.5
-Objective:           Squared-error regression
-```
-
-The model is trained on observations up to the configured training cutoff.
-
----
-
-## 2. LSTM
-
-The LSTM captures temporal structure that cannot be represented by a single cross-sectional feature vector.
-
-For each stock, the network receives:
-
-```text
-90 consecutive trading days
-        |
-        v
-39 features per day
-        |
-        v
-       LSTM
-        |
-        v
-Predicted 5-day forward return
-```
-
-Current configuration:
-
-| Parameter | Value |
-|---|---:|
-| Lookback | 90 days |
-| Hidden size | 96 |
-| Batch size | 512 |
-| Epochs | 15 |
-| Learning rate | 5e-4 |
-| Dropout | 0.20 |
-
-CUDA is used automatically when available. Otherwise, the model runs on CPU.
-
----
-
-## 3. Ensemble
-
-The final prediction score combines both models:
-
-```text
-Final Score
-    =
-0.60 x XGBoost Prediction
-    +
-0.40 x LSTM Prediction
-```
-
-Stocks are ranked in descending order according to this score.
-
-The ensemble is intended to combine:
-
-- XGBoost's ability to model nonlinear cross-sectional relationships
-- LSTM's ability to capture temporal behaviour
-
----
-
-# Portfolio Construction
-
-The strategy constructs a long-only portfolio from the highest-ranked securities.
-
-Current configuration:
-
-| Parameter | Value |
-|---|---:|
-| Portfolio size | Top 15 stocks |
-| Rebalance weekday | Friday |
-| Rebalance threshold | 15% |
-| Minimum momentum | 2% |
-| Maximum volatility | 50% |
-| Maximum sector weight | 35% |
-| Stop loss | -15% |
-| Transaction cost | 8 bps |
-| Slippage | 3 bps |
-
----
-
-## Ranking
-
-For every rebalance date:
-
-1. Model predictions are generated.
-2. The XGBoost and LSTM predictions are combined.
-3. Stocks are ranked by the ensemble score.
-4. Portfolio filters are applied.
-5. The highest-ranked eligible stocks are selected.
-
----
-
-## Volatility-Based Position Sizing
-
-Instead of always assigning equal weights, the strategy can use inverse-volatility-based position sizing.
-
-Lower-volatility securities receive relatively larger portfolio weights, while higher-volatility securities receive smaller allocations.
-
-This is intended to reduce excessive concentration of portfolio risk in volatile stocks.
-
----
-
-## Momentum Filter
-
-The strategy can require stocks to satisfy a minimum momentum threshold before entering the portfolio.
-
-Current threshold:
-
-```text
-2%
-```
-
----
-
-## Volatility Filter
-
-Stocks with estimated volatility above:
-
-```text
-50%
-```
-
-can be excluded from selection.
-
----
-
-## Sector Exposure Constraint
-
-The portfolio limits exposure to any individual sector to approximately:
-
-```text
-35%
-```
-
-This reduces excessive sector concentration.
-
----
-
-## Rebalancing Threshold
-
-The system does not necessarily rebuild the portfolio for insignificant allocation changes.
-
-A rebalance can be skipped when estimated portfolio turnover is below:
-
-```text
-15%
-```
-
-This helps reduce unnecessary trading.
-
----
-
-## Stop Loss
-
-The strategy includes configurable stop-loss behaviour.
-
-Current threshold:
-
-```text
--15%
-```
-
----
-
-# Transaction Costs
-
-Trading simulations include execution friction rather than assuming free trading.
-
-Current assumptions:
-
-```text
-Transaction Cost : 8 basis points
-Slippage         : 3 basis points
-```
-
-These costs are incorporated into simulated trading performance.
-
----
-
-# Chronological Evaluation
-
-Financial time-series data should not be randomly shuffled between training and testing periods.
-
-The project therefore uses chronological splits:
-
-| Stage | Period |
+## Results (latest full run, 51 stocks, data to 23 Nov 2026)
+
+Training data ends 31 Dec 2023, so every period below is out of sample. Costs (8 bps)
+and slippage (3 bps) are included.
+
+| Period | ML strategy | NIFTY 50 | Equal weight | Random ranking* | Sharpe | Max DD |
+|---|---:|---:|---:|---:|---:|---:|
+| Validation H1 2024 | **13.71%** | 10.43% | 13.85% | 13.93% | 1.88 | -6.77% |
+| Testing H2 2024 | -5.10% | -2.06% | -3.79% | -6.76% | -0.39 | -15.08% |
+| Holdout 2025 | **10.33%** | 10.05% | 10.22% | 4.00% | 1.26 | -7.73% |
+| Holdout 2026 YTD | -7.72% | -3.05% | -0.96% | -6.06% | -0.21 | -15.76% |
+
+\* same filters, sizing, costs and rebalancing, but stocks ranked at random (mean of 10 seeds).
+
+**What the diagnostics show - reported as found, not tuned away:**
+
+- **Overfitting is measurable.** XGBoost's ranking skill (IC) is 0.49 in training but only
+  -0.02 to 0.04 out of sample.
+- **Much of the return comes from the portfolio rules, not the predictions.** Random ranking with
+  the same rules matches the model in 2024; equal-weight beats it in three of four periods.
+- **Monitoring caught the decline.** In 2026 the ensemble IC fell to about zero, and in the same
+  period the PSI drift monitor raised ALERTs on volatility features (PSI 0.98 on `vol60`), the
+  signal that the market no longer looks like the training data.
+- **Walk-forward retraining** (six 6-month folds) did not consistently beat the static model,
+  so frequent retraining alone does not fix weak signal.
+- **Risk today:** 15 holdings (effective 13.7), volatility 14.2%, beta 0.89, 1-day 95% VaR
+  1.57% = INR 15,663 on INR 10 lakh. Replaying the 2020 COVID crash on today's weights gives
+  -33.4% (NIFTY -37.2%).
+
+| | |
 |---|---|
-| Training | Up to 2023-12-31 |
-| Validation | 2024-01-01 to 2024-06-30 |
-| Testing | 2024-07-01 to 2024-12-31 |
-| Simulated 2025 Evaluation | 2025-01-01 onward |
+| ![Strategy vs baselines](results/figures/strategy_comparison.png) | ![SHAP](results/figures/shap_summary.png) |
+| ![Stress tests](results/figures/risk_stress_tests.png) | ![Drift](results/figures/drift_psi.png) |
 
-This prevents future observations from being included in the main model-training period.
-
----
-
-# Strategy Performance
-
-The committed experiment produced the following results:
-
-| Period | Total Return | Sharpe Ratio | Max Drawdown | NIFTY 50 Return | Alpha |
-|---|---:|---:|---:|---:|---:|
-| Validation H1 2024 | **15.93%** | **2.17** | -5.97% | 10.43% | **+5.49%** |
-| Testing H2 2024 | **-6.25%** | **-0.54** | -14.34% | -2.06% | **-4.19%** |
-| Simulated 2025 Evaluation | **10.41%** | **1.27** | -8.07% | 10.25% | **+0.16%** |
-
-Additional statistics from the same experiment:
-
-| Period | CAGR | Sortino | Volatility | Trades |
-|---|---:|---:|---:|---:|
-| Validation H1 2024 | 36.75% | 2.41 | 17.56% | 20 |
-| Testing H2 2024 | -12.21% | -0.74 | 13.59% | 17 |
-| Simulated 2025 Evaluation | 10.77% | 1.98 | 12.39% | 35 |
-
-The negative H2 2024 result is deliberately retained.
-
-The project does not select only successful periods for presentation. The test period demonstrates that model performance varies significantly across market regimes.
-
-The 2025 result is a **historical simulation**, not live trading performance.
+The full report is in [results/detailed_report.txt](results/detailed_report.txt), and all tables
+are in [results/tables/](results/tables/).
 
 ---
 
-# Evaluation Metrics
-
-The backtesting pipeline calculates metrics including:
-
-- Total return
-- CAGR
-- Sharpe ratio
-- Sortino ratio
-- Maximum drawdown
-- Calmar ratio
-- Annualized volatility
-- Win rate
-- Best trading day
-- Worst trading day
-- Number of trades
-- Benchmark return
-- Benchmark Sharpe ratio
-- Alpha
-
-The prediction models are separately evaluated using:
-
-- Mean Squared Error
-- Root Mean Squared Error
-- Mean Absolute Error
-- R²
-- Directional accuracy
-
----
-
-# Repository Structure
-
-```text
-Algo-Trading-Bot/
-|
-|-- notebooks/
-|   `-- hybrid_trading_system.ipynb
-|
-|-- results/
-|   |
-|   |-- figures/
-|   |   |-- drawdown_curves.png
-|   |   |-- equity_curves.png
-|   |   |-- feature_importance.png
-|   |   |-- metric_comparison.png
-|   |   |-- monthly_returns_heatmap.png
-|   |   |-- prediction_scatter_Paper_2025.png
-|   |   |-- prediction_scatter_Testing.png
-|   |   |-- prediction_scatter_Validation.png
-|   |   |-- returns_distribution.png
-|   |   `-- rolling_metrics.png
-|   |
-|   |-- tables/
-|   |   |-- all_trades.csv
-|   |   |-- detailed_transactions_2025.csv
-|   |   |-- model_performance.csv
-|   |   `-- performance_summary.csv
-|   |
-|   `-- detailed_report.txt
-|
-|-- requirements.txt
-|-- .gitignore
-`-- README.md
-```
-
----
-
-# Generated Analysis
-
-The repository contains several outputs for inspecting the strategy from different angles.
-
-## Equity Curves
-
-```text
-results/figures/equity_curves.png
-```
-
-Tracks cumulative portfolio performance across evaluation periods.
-
-## Drawdown Curves
-
-```text
-results/figures/drawdown_curves.png
-```
-
-Shows declines from previous portfolio peaks.
-
-## Monthly Returns
-
-```text
-results/figures/monthly_returns_heatmap.png
-```
-
-Displays monthly strategy returns.
-
-## Rolling Metrics
-
-```text
-results/figures/rolling_metrics.png
-```
-
-Tracks changes in risk and performance metrics through time.
-
-## Return Distribution
-
-```text
-results/figures/returns_distribution.png
-```
-
-Visualizes the distribution of realized strategy returns.
-
-## Feature Importance
-
-```text
-results/figures/feature_importance.png
-```
-
-Shows XGBoost feature importance.
-
-## Prediction Diagnostics
-
-```text
-results/figures/prediction_scatter_Validation.png
-results/figures/prediction_scatter_Testing.png
-results/figures/prediction_scatter_Paper_2025.png
-```
-
-These plots compare realized returns against model predictions across evaluation periods.
-
----
-
-# Installation
-
-## 1. Clone the Repository
+## Quick start
 
 ```bash
 git clone https://github.com/RathanPaida/Algo-Trading-Bot.git
 cd Algo-Trading-Bot
+python -m venv .venv && .venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt && pip install -e .
+
+python -m equity_intel run            # ingest -> quality -> train -> backtest -> warehouse (~8 min on GPU)
+python -m equity_intel run --quick    # 25 stocks, small models (~1 min)
+streamlit run dashboard/app.py        # dashboard on http://localhost:8501
+uvicorn api.main:app --reload         # API docs on http://localhost:8000/docs
+python -m pytest                      # 71 tests
 ```
 
----
-
-## 2. Create a Virtual Environment
-
-### Windows PowerShell
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-### Linux / macOS
+### Command line
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
----
-
-## 3. Upgrade pip
-
-```bash
-python -m pip install --upgrade pip
-```
-
----
-
-## 4. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-Main dependencies include:
-
-```text
-numpy
-pandas
-yfinance
-xgboost
-scikit-learn
-torch
-matplotlib
-seaborn
-jupyter
-```
-
----
-
-# Running the Project
-
-The notebook has been refactored into the `equity_intel` Python package
-(the original notebook is kept in `notebooks/archive/`).
-
-```bash
-pip install -e .
-python -m equity_intel run          # full pipeline
-python -m equity_intel run --quick  # fast smoke run (25 stocks, fewer trees/epochs)
-python -m pytest                    # unit tests, incl. look-ahead leakage tests
-
-# individual stages
-python -m equity_intel ingest       # incremental download -> data/raw (Parquet)
-python -m equity_intel quality      # validation -> data/clean + data-quality report
-python -m equity_intel warehouse    # load DuckDB warehouse + refresh SQL views
+python -m equity_intel ingest         # incremental download -> data/raw
+python -m equity_intel quality        # validation -> data/clean + data_quality_report.csv
+python -m equity_intel warehouse      # reload DuckDB tables and views
+python -m equity_intel tables         # list warehouse tables
 python -m equity_intel sql "SELECT * FROM v_latest_signals LIMIT 10"
+python -m equity_intel export-bi      # Parquet files for Power BI
+python -m equity_intel ask "Which sectors does the model buy most often?"
+python -m equity_intel commentary     # AI-written portfolio note -> results/ai_commentary.md
+mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
 
-Each training run also produces model diagnostics: walk-forward retraining,
-baseline strategies (equal weight, momentum-only, random ranking), SHAP explanations,
-PSI drift monitoring and rolling IC. Runs are tracked in MLflow:
-`mlflow ui --backend-store-uri sqlite:///mlflow.db`.
-
-Interactive dashboard (performance, risk, model health, data quality, SQL explorer):
+### Docker
 
 ```bash
-streamlit run dashboard/app.py
-```
-
-Risk analytics: historical/parametric VaR and CVaR, beta, CAPM alpha, tracking error,
-per-holding risk contribution, historical stress tests (2016 demonetisation, 2020 COVID
-crash, 2022 rate hikes, 2023 Adani-Hindenburg, H2 2024) and hypothetical shocks.
-For Power BI: `python -m equity_intel export-bi` (see `docs/powerbi_guide.md`).
-
-GenAI layer (works offline; uses Claude when `ANTHROPIC_API_KEY` is set, or a local Ollama model):
-
-```bash
-python -m equity_intel ask "Which sectors does the model buy most often?"   # text-to-SQL
-python -m equity_intel commentary                                           # grounded AI portfolio note
-```
-
-Generated SQL must pass a read-only check and runs on a locked connection; the
-commentary is checked so every number traces back to the warehouse.
-
-REST API (interactive docs at http://localhost:8000/docs):
-
-```bash
-uvicorn api.main:app --reload
-# GET /signals  /portfolio  /risk  /performance  /model-health  /data-quality
-# GET /stocks/{symbol}/explain   POST /ask
-```
-
-Docker and CI:
-
-```bash
-docker compose --profile pipeline run --rm pipeline   # build data, models, warehouse
+docker compose --profile pipeline run --rm pipeline   # build data, models and warehouse
 docker compose up api dashboard                       # API :8000, dashboard :8501
 ```
 
-GitHub Actions runs lint + tests + a Docker build on every push, and a scheduled
-weekday job ingests new prices and runs the data-quality checks.
+### GenAI configuration
 
-Business SQL queries live in `sql/business_queries.sql`; BI views in `sql/views.sql`.
-Known corporate actions that Yahoo does not adjust for are in `config/corporate_actions.yaml`.
+The AI analyst works without any key (offline mode matches questions to pre-written SQL).
+For free-form answers set `ANTHROPIC_API_KEY` (Claude, via the official `anthropic` SDK) or run
+[Ollama](https://ollama.com) locally. Choose in `config/config.yaml → genai.provider`.
 
-All settings live in `config/config.yaml`.
+---
 
-The pipeline will:
+## API
+
+| Method | Endpoint | Returns |
+|---|---|---|
+| GET | `/health` | status and last pipeline run |
+| GET | `/signals?limit=&sector=` | latest model ranking |
+| GET | `/portfolio` | current holdings and sector exposure |
+| GET | `/risk` | VaR, beta, risk contributions, stress tests |
+| GET | `/performance` | backtest results per period |
+| GET | `/model-health` | IC per period, drifted features |
+| GET | `/data-quality` | per-ticker quality status |
+| GET | `/stocks/{symbol}/explain` | SHAP breakdown of the latest prediction |
+| POST | `/ask` | natural-language question → SQL → answer |
+
+---
+
+## Design decisions
+
+- **Chronological splits with an embargo.** The 5-day target at date *t* uses prices up to *t+5*,
+  so the last 5 days before the training cutoff are dropped to stop labels leaking into validation.
+  A unit test proves no feature uses future prices.
+- **Baselines before claims.** Every strategy uses the same costs and rules, so the comparison
+  isolates what the model adds.
+- **IC over R².** A top-15 portfolio needs correct *ranking*, so the daily rank correlation (IC)
+  is the main model metric.
+- **Defence in depth for AI-generated SQL.** A keyword check allows only single SELECT queries,
+  and the query runs on a read-only DuckDB connection with external file access disabled,
+  settings locked and a row cap.
+- **Grounded GenAI.** The model receives only facts computed from the warehouse, and every number
+  in its output is checked against those facts.
+- **Human in the loop for data fixes.** The quality stage flags suspicious moves; a person
+  confirms corporate actions in a version-controlled config file. They are not silently "fixed".
+
+## Bugs found and fixed while refactoring the original notebook
+
+1. The volatility filter compared *daily* volatility (≈0.02) with a 50% *annual* cap, so it never
+   triggered.
+2. The sector cap was undone by re-normalising weights; it is now enforced iteratively.
+3. Training labels near the cutoff overlapped the validation period (fixed with the embargo).
+4. Sharpe ratio returned 10¹⁶ for constant returns (floating-point zero check).
+5. Unadjusted corporate actions (TRENT bonus, Tata Motors demerger) appeared as 33-40% one-day
+   losses; LTIMindtree's ticker had changed on Yahoo.
+
+---
+
+## Project structure
 
 ```text
-1. Load NIFTY 50 benchmark data
-2. Download stock data
-3. Build engineered features
-4. Train XGBoost
-5. Train the LSTM
-6. Generate LSTM predictions
-7. Build the ensemble score
-8. Run validation backtest
-9. Run testing backtest
-10. Run the simulated 2025 evaluation
-11. Generate performance reports and visualizations
+equity_intel/            core package
+  data/                  ingest, lake (Parquet layers), quality, warehouse (DuckDB)
+  models/                xgb_model, lstm_model, ensemble, training, walk_forward
+  genai/                 llm backends, text_to_sql, commentary
+  features.py  backtest.py  baselines.py  risk.py  metrics.py
+  explain.py   monitoring.py  tracking.py  sql_safety.py  reporting.py  pipeline.py  cli.py
+api/main.py              FastAPI service
+dashboard/               Streamlit app + chart helpers
+sql/                     BI views and business queries
+config/                  config.yaml, corporate_actions.yaml
+tests/                   71 unit tests
+notebooks/demo.ipynb     walkthrough; original research notebook in notebooks/archive/
+results/                 tables, figures and report from the latest run
+docs/                    Power BI guide, project guide, screenshots
+.github/workflows/       CI and scheduled data job
 ```
 
-An internet connection is required because market data is retrieved through Yahoo Finance.
+## Tech stack
 
-LSTM training can take significantly longer on CPU than on CUDA-capable hardware.
+Python · pandas · NumPy · DuckDB · SQL · Parquet/PyArrow · pandera · XGBoost · PyTorch · scikit-learn
+· SHAP · MLflow · Streamlit · Plotly · FastAPI · Pydantic · Anthropic Claude API · Docker · GitHub
+Actions · pytest · ruff
 
----
+## Limitations
 
-# Reproducibility
+- Universe is today's NIFTY 50 list applied to the past (survivorship bias).
+- Yahoo Finance data needs the corporate-actions file to stay correct; it is not exchange-grade.
+- Costs and slippage are flat estimates; no market-impact or liquidity model.
+- Backtests are simulations; no live order execution.
+- Out-of-sample predictive skill is weak (see Results). The platform is built to measure that
+  honestly, not to claim a profitable strategy.
 
-The project sets deterministic random seeds for NumPy and PyTorch where applicable.
+## Disclaimer
 
-However, exact numerical reproduction can still depend on:
-
-- Python and library versions
-- CPU/GPU hardware
-- CUDA behaviour
-- Yahoo Finance data changes
-- External data availability
-- Floating-point behaviour
-- Parallel execution
-
-The committed result files represent the output of a completed experimental run.
-
----
-
-# Important Experimental Considerations
-
-## Historical Constituents
-
-The current stock universe is based on a selected NIFTY 50 constituent list.
-
-It does not reconstruct the complete historical NIFTY 50 membership for every past date.
-
-This can introduce survivorship bias.
-
-## Market Data
-
-Yahoo Finance is convenient for research but may contain:
-
-- Missing observations
-- Symbol changes
-- Data revisions
-- Delisted-security limitations
-- Corporate-action inconsistencies
-
-## Execution Model
-
-Transaction costs and slippage are approximations.
-
-Real trading performance may additionally depend on:
-
-- Bid-ask spreads
-- Liquidity
-- Market impact
-- Order execution
-- Taxes and brokerage
-- Position limits
-- Execution latency
-
-## Model Risk
-
-Machine-learning relationships learned from historical financial data may weaken or disappear as market regimes change.
-
-The negative H2 2024 test period demonstrates this directly.
-
----
-
-# Limitations
-
-This is a quantitative research project, not a production trading platform.
-
-Current limitations include:
-
-- Historical simulation rather than live execution
-- No complete point-in-time reconstruction of historical index constituents
-- Simplified transaction-cost modelling
-- Simplified slippage modelling
-- Limited liquidity modelling
-- Limited market-impact modelling
-- Dependence on Yahoo Finance data
-- No guarantee of model stability across market regimes
-- No exhaustive hyperparameter optimization
-- No formal probabilistic uncertainty model
-- No live order-management or brokerage integration
-
----
-
-# Possible Future Improvements
-
-Potential extensions include:
-
-- Walk-forward model retraining
-- Rolling or expanding training windows
-- Historical NIFTY constituent reconstruction
-- Hyperparameter optimization
-- Better liquidity and market-impact models
-- Fundamental financial features
-- Macroeconomic features
-- Regime detection
-- Prediction uncertainty estimation
-- Portfolio optimization using covariance information
-- Risk-parity allocation
-- Dynamic ensemble weights
-- Model calibration
-- Live paper-trading infrastructure
-- Broker API integration
-- Automated experiment tracking
-
----
-
-# Tech Stack
-
-### Programming
-
-- Python
-
-### Data
-
-- NumPy
-- Pandas
-- yfinance
-
-### Machine Learning
-
-- XGBoost
-- scikit-learn
-
-### Deep Learning
-
-- PyTorch
-- LSTM
-
-### Visualization
-
-- Matplotlib
-- Seaborn
-
-### Development
-
-- Jupyter Notebook
-- Git
-- GitHub
-
----
-
-# Project Scope
-
-This repository focuses on the engineering and quantitative-research aspects of building a machine-learning-driven trading pipeline:
-
-```text
-Data
- -> Features
- -> Prediction
- -> Ranking
- -> Portfolio
- -> Backtesting
- -> Risk Analysis
- -> Evaluation
-```
-
-The goal is not to claim a consistently profitable trading strategy, but to build and evaluate a complete experimental framework while preserving both successful and unsuccessful out-of-sample results.
-
----
-
-# Disclaimer
-
-This project is provided solely for **educational and research purposes**.
-
-It does not constitute financial, investment, or trading advice.
-
-All reported performance is historical or simulated. Past performance does not guarantee future results.
+For educational and research purposes only. Not financial, investment or trading advice.

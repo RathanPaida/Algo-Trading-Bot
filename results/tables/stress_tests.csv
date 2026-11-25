@@ -1,0 +1,10 @@
+scenario,type,start,end,portfolio_return_pct,nifty_return_pct,worst_holding,weight_covered_pct,description
+Demonetisation_2016,historical,2016-11-08,2016-12-26,-5.770478407664519,-7.436016868994388,ASIANPAINT.NS (-17.9%),100.0,
+COVID_crash_2020,historical,2020-02-19,2020-03-23,-33.44052311178112,-37.239712063907625,INDUSINDBK.NS (-70.5%),100.0,
+Rate_hikes_2022,historical,2022-01-17,2022-06-17,-8.304549739306962,-16.465934060306942,BAJFINANCE.NS (-31.0%),100.0,
+Adani_Hindenburg_2023,historical,2023-01-24,2023-02-28,-6.200705036726977,-4.494635409423953,ADANIENT.NS (-60.4%),100.0,
+Correction_H2_2024,historical,2024-09-27,2024-11-21,-14.59785331796661,-10.806578997826112,INDUSINDBK.NS (-32.9%),100.0,
+Market_down_10pct,hypothetical,,,-8.932879188365,,,,"NIFTY -10%, each stock moves beta x shock"
+Market_down_20pct,hypothetical,,,-17.86575837673,,,,"NIFTY -20%, each stock moves beta x shock"
+Banking_down_15pct,hypothetical,,,-2.5498436632271932,,,,Banking stocks -15%
+IT_down_15pct,hypothetical,,,-0.0,,,,IT stocks -15%
