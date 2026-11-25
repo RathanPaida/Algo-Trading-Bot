@@ -1,0 +1,42 @@
+# Scheduled data job: every weekday after the NSE close, download the new day's
+# prices (incrementally, using the cached raw layer) and run the data-quality
+# checks. The job fails - and GitHub emails the owner - if any ticker FAILS.
+name: Daily data refresh
+
+on:
+  schedule:
+    - cron: "30 11 * * 1-5"   # 17:00 IST, after the 15:30 IST market close
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+          pip install --no-deps -e .
+      - name: Restore raw price layer
+        uses: actions/cache@v4
+        with:
+          path: data/raw
+          key: raw-prices-${{ github.run_id }}
+          restore-keys: raw-prices-
+      - name: Ingest (incremental)
+        run: python -m equity_intel ingest
+      - name: Data-quality checks
+        run: python -m equity_intel quality
+      - name: Upload data-quality report
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-quality-report
+          path: results/tables/data_quality_report.csv
+      - name: Fail on FAIL status
+        run: |
+          python -c "import pandas as pd, sys; r = pd.read_csv('results/tables/data_quality_report.csv'); bad = r[r.status == 'FAIL']; print(bad.to_string()); sys.exit(1 if len(bad) else 0)"

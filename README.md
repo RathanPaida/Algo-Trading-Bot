@@ -673,6 +673,24 @@ python -m equity_intel commentary                                           # gr
 Generated SQL must pass a read-only check and runs on a locked connection; the
 commentary is checked so every number traces back to the warehouse.
 
+REST API (interactive docs at http://localhost:8000/docs):
+
+```bash
+uvicorn api.main:app --reload
+# GET /signals  /portfolio  /risk  /performance  /model-health  /data-quality
+# GET /stocks/{symbol}/explain   POST /ask
+```
+
+Docker and CI:
+
+```bash
+docker compose --profile pipeline run --rm pipeline   # build data, models, warehouse
+docker compose up api dashboard                       # API :8000, dashboard :8501
+```
+
+GitHub Actions runs lint + tests + a Docker build on every push, and a scheduled
+weekday job ingests new prices and runs the data-quality checks.
+
 Business SQL queries live in `sql/business_queries.sql`; BI views in `sql/views.sql`.
 Known corporate actions that Yahoo does not adjust for are in `config/corporate_actions.yaml`.
 

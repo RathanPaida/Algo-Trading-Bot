@@ -101,7 +101,12 @@ def ask(cfg: dict, question: str, llm=None, max_rows: int | None = None) -> Answ
 
     if not llm.available:
         title, sql = _match_named_query(question, examples)
-        result = wh.safe_query(cfg, sql, max_rows)
+        try:
+            result = wh.safe_query(cfg, sql, max_rows)
+        except Exception as e:
+            return Answer(question, sql, pd.DataFrame(), f"Offline mode: the closest business query "
+                          f"(**{title}**) could not run on the current warehouse ({str(e).splitlines()[0]}).",
+                          llm.name)
         return Answer(question, sql, result,
                       f"Offline mode (no language model configured): showing the closest pre-written "
                       f"business query - **{title}**. Configure a model to get free-form answers.",

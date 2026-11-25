@@ -1,0 +1,35 @@
+# Usage:
+#   docker compose --profile pipeline run --rm pipeline   # download data, train, backtest, fill warehouse
+#   docker compose up api dashboard                       # API on :8000, dashboard on :8501
+#
+# Set ANTHROPIC_API_KEY in your shell (or a .env file) to enable the AI analyst.
+
+x-app: &app
+  image: equity-intel:latest
+  build: .
+  volumes:
+    - ./data:/app/data
+    - ./models:/app/models
+    - ./results:/app/results
+  environment:
+    - ANTHROPIC_API_KEY
+
+services:
+  pipeline:
+    <<: *app
+    command: python -m equity_intel run
+    profiles: ["pipeline"]
+
+  api:
+    <<: *app
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+
+  dashboard:
+    <<: *app
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8501/_stcore/health"]
