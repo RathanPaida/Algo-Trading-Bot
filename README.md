@@ -639,7 +639,16 @@ pip install -e .
 python -m equity_intel run          # full pipeline
 python -m equity_intel run --quick  # fast smoke run (25 stocks, fewer trees/epochs)
 python -m pytest                    # unit tests, incl. look-ahead leakage tests
+
+# individual stages
+python -m equity_intel ingest       # incremental download -> data/raw (Parquet)
+python -m equity_intel quality      # validation -> data/clean + data-quality report
+python -m equity_intel warehouse    # load DuckDB warehouse + refresh SQL views
+python -m equity_intel sql "SELECT * FROM v_latest_signals LIMIT 10"
 ```
+
+Business SQL queries live in `sql/business_queries.sql`; BI views in `sql/views.sql`.
+Known corporate actions that Yahoo does not adjust for are in `config/corporate_actions.yaml`.
 
 All settings live in `config/config.yaml`.
 

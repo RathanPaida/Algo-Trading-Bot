@@ -1,12 +1,18 @@
-"""The end-to-end pipeline: data -> features -> models -> backtests -> reports.
+"""The end-to-end pipeline, split into stages that can run on their own:
 
-Run it with:  python -m equity_intel run
+    ingest    -> download new prices into data/raw (incremental)
+    quality   -> validate + clean into data/clean, write the data-quality report
+    train     -> features -> XGBoost + LSTM -> ensemble -> backtests -> reports
+    warehouse -> load everything into DuckDB and refresh the SQL views
+
+`run_pipeline` runs all four in order:  python -m equity_intel run
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +21,9 @@ import pandas as pd
 from equity_intel import reporting
 from equity_intel.backtest import BacktestResult, run_backtest
 from equity_intel.config import results_dirs, set_seed
-from equity_intel.data.ingest import download_benchmark, download_universe
+from equity_intel.data import warehouse as wh
+from equity_intel.data.lake import DataLake, ingest_all
+from equity_intel.data.quality import run_quality
 from equity_intel.features import FEATURES, build_panel, training_cutoff
 from equity_intel.models import lstm_model, xgb_model
 from equity_intel.models.ensemble import ensemble_score
@@ -26,7 +34,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class MarketData:
-    prices: dict[str, pd.DataFrame]   # symbol -> OHLCV
+    prices: dict[str, pd.DataFrame]   # symbol -> clean OHLCV
     benchmark: pd.Series              # NIFTY 50 close
 
     @property
@@ -34,12 +42,47 @@ class MarketData:
         return pd.DataFrame({s: df["Close"] for s, df in self.prices.items()}).sort_index()
 
 
-def load_market_data(cfg: dict, symbols: list[str] | None = None) -> MarketData:
+# ------------------------------------------------------------------ stages
+def stage_ingest(cfg: dict, symbols: list[str], full_refresh: bool = False) -> pd.DataFrame:
+    started = datetime.now()
+    lake = DataLake(cfg["paths"]["data_dir"])
     d = cfg["data"]
-    prices = download_universe(symbols or SYMBOLS, d["start"], d["end"], d["min_days"])
+    log_df = ingest_all(lake, [d["benchmark"], *symbols], d["start"], d["end"], full_refresh)
+    with wh.connect(cfg) as con:
+        wh.append_table(con, "ingestion_log", log_df)
+        wh.log_run(con, "ingest", "success", started, f"{int(log_df['rows_added'].sum())} rows added")
+    return log_df
+
+
+def stage_quality(cfg: dict, symbols: list[str]) -> pd.DataFrame:
+    started = datetime.now()
+    lake = DataLake(cfg["paths"]["data_dir"])
+    report = run_quality(lake, symbols, cfg["data"]["benchmark"], cfg["data"]["min_days"])
+    _, tables = results_dirs(cfg)
+    report.to_csv(tables / "data_quality_report.csv", index=False)
+    with wh.connect(cfg) as con:
+        wh.write_table(con, "dq_report", report.assign(checked_at=datetime.now()))
+        counts = report["status"].value_counts().to_dict()
+        wh.log_run(con, "quality", "success", started, str(counts))
+    return report
+
+
+def load_market_data(cfg: dict, symbols: list[str]) -> MarketData:
+    """Read clean (silver) prices for every symbol that passed the quality checks."""
+    lake = DataLake(cfg["paths"]["data_dir"])
+    start, end = pd.Timestamp(cfg["data"]["start"]), pd.Timestamp(cfg["data"]["end"])
+    prices = {}
+    for s in symbols:
+        df = lake.read_clean(s)
+        if df is not None:
+            prices[s] = df.loc[start:end]
+    bench = lake.read_clean(cfg["data"]["benchmark"])
+    if bench is None:
+        raise RuntimeError("No clean benchmark data - run `python -m equity_intel ingest` and `quality` first")
     if len(prices) < cfg["portfolio"]["top_k"] + 5:
-        raise RuntimeError(f"Only {len(prices)} symbols downloaded - check the data source")
-    return MarketData(prices, download_benchmark(d["benchmark"], d["start"], d["end"]))
+        raise RuntimeError(f"Only {len(prices)} clean symbols available - run ingest/quality first")
+    log.info("Loaded clean prices for %d symbols", len(prices))
+    return MarketData(prices, bench["Close"].loc[start:end].rename("benchmark"))
 
 
 def evaluation_periods(cfg: dict, last_date: pd.Timestamp) -> dict[str, tuple[str, str]]:
@@ -91,31 +134,60 @@ def save_models(cfg: dict, xgb, lstm, scaler) -> None:
     log.info("Saved models to %s", models_dir)
 
 
-def run_pipeline(cfg: dict, symbols: list[str] | None = None) -> dict:
+def stage_train(cfg: dict, symbols: list[str]) -> dict:
     set_seed(cfg["project"]["seed"])
     figs, tables = results_dirs(cfg)
-
-    log.info("[1/5] Loading market data")
     data = load_market_data(cfg, symbols)
 
-    log.info("[2/5] Building features")
     panel = build_panel(data.prices, cfg["features"]["horizon"])
     log.info("Panel: %s rows, %d symbols, %d features",
              f"{len(panel):,}", panel["symbol"].nunique(), len(FEATURES))
 
-    log.info("[3/5] Training models")
     panel, xgb, lstm, scaler = train_and_score(panel, cfg)
     save_models(cfg, xgb, lstm, scaler)
 
-    log.info("[4/5] Backtesting")
     periods = evaluation_periods(cfg, panel["date"].max())
     results = run_backtests(panel, data, periods, cfg)
 
-    log.info("[5/5] Reporting")
     model_periods = {"Training": (cfg["data"]["start"], cfg["splits"]["train_end"]), **periods}
     out = reporting.save_tables(results, panel, model_periods, xgb, tables)
     reporting.save_figures(results, panel, model_periods, out["feature_importance"], figs)
     reporting.write_text_report(results, cfg, Path(cfg["paths"]["results_dir"]) / "detailed_report.txt")
-
     return {"data": data, "panel": panel, "results": results, "tables": out,
             "xgb": xgb, "lstm": lstm, "scaler": scaler}
+
+
+def stage_warehouse(cfg: dict, out: dict | None = None, dq_report: pd.DataFrame | None = None,
+                    symbols: list[str] | None = None) -> None:
+    """Load prices (and, if given, model results) into DuckDB and refresh views."""
+    started = datetime.now()
+    data = out["data"] if out else load_market_data(cfg, symbols or SYMBOLS)
+    with wh.connect(cfg) as con:
+        if dq_report is None:
+            try:
+                dq_report = con.execute("SELECT * FROM dq_report").df()
+            except Exception:
+                dq_report = None
+        wh.load_market_tables(con, data.prices, data.benchmark, dq_report)
+        if out:
+            wh.publish_results(con, out["tables"], out["panel"])
+        wh.apply_views(con)
+        wh.log_run(con, "warehouse", "success", started)
+    log.info("Warehouse ready: %s", wh.db_path(cfg))
+
+
+def run_pipeline(cfg: dict, symbols: list[str] | None = None, skip_ingest: bool = False) -> dict:
+    symbols = symbols or SYMBOLS
+    started = datetime.now()
+    if not skip_ingest:
+        log.info("[1/4] Ingest")
+        stage_ingest(cfg, symbols)
+    log.info("[2/4] Data quality")
+    dq = stage_quality(cfg, symbols)
+    log.info("[3/4] Train, backtest, report")
+    out = stage_train(cfg, symbols)
+    log.info("[4/4] Warehouse")
+    stage_warehouse(cfg, out, dq)
+    with wh.connect(cfg) as con:
+        wh.log_run(con, "full_pipeline", "success", started, f"{len(out['results'])} periods backtested")
+    return out

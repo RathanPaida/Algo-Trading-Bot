@@ -6,8 +6,6 @@ import logging
 
 import pandas as pd
 
-from equity_intel.universe import ALIASES
-
 log = logging.getLogger(__name__)
 
 OHLCV = ["Open", "High", "Low", "Close", "Volume"]
@@ -39,31 +37,3 @@ def download_one(ticker: str, start: str, end: str | None) -> pd.DataFrame | Non
     df.index = pd.to_datetime(df.index).tz_localize(None)
     df.index.name = "date"
     return None if df.empty else df
-
-
-def download_universe(symbols: list[str], start: str, end: str | None,
-                      min_days: int) -> dict[str, pd.DataFrame]:
-    """Download every symbol, trying known aliases if the main ticker fails."""
-    data: dict[str, pd.DataFrame] = {}
-    failed: list[str] = []
-    for i, sym in enumerate(symbols, 1):
-        for ticker in [sym] + ALIASES.get(sym, []):
-            df = download_one(ticker, start, end)
-            if df is not None and len(df) >= min_days:
-                data[sym] = df
-                if ticker != sym:
-                    log.info("Alias used: %s -> %s", sym, ticker)
-                break
-        else:
-            failed.append(sym)
-        if i % 10 == 0:
-            log.info("Downloaded %d/%d symbols", i, len(symbols))
-    log.info("Download complete: %d ok, %d failed %s", len(data), len(failed), failed or "")
-    return data
-
-
-def download_benchmark(ticker: str, start: str, end: str | None) -> pd.Series:
-    df = download_one(ticker, start, end)
-    if df is None:
-        raise RuntimeError(f"Could not download benchmark {ticker}")
-    return df["Close"].rename("benchmark")

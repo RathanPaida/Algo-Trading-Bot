@@ -35,6 +35,7 @@ ALIASES: dict[str, list[str]] = {
     "SHRIRAMFIN.NS": ["SRTRANSFIN.NS"],
     "TATACONSUM.NS": ["TATAGLOBAL.NS"],
     "TATAMOTORS.NS": ["TMPV.NS"],
+    "LTIM.NS": ["LTM.NS"],          # LTIMindtree renamed on Yahoo
 }
 
 

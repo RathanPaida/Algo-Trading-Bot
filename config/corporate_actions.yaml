@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# Corporate-actions master: events Yahoo Finance did NOT adjust for.
+#
+# action: adjust      -> prices BEFORE `date` are multiplied by `ratio`
+#                        (volume divided by it) so the series has no fake jump
+# action: trim_before -> drop all rows before `date` (bad / placeholder history)
+#
+# New candidates are flagged automatically by the data-quality stage
+# ("one-day moves > 20%"); a human confirms them and adds a row here.
+# ---------------------------------------------------------------------------
+
+- ticker: TRENT.NS
+  date: "2026-01-01"
+  action: adjust
+  ratio: 0.666667
+  reason: "Opened at exactly 2/3 of previous close - unadjusted 1:2 bonus/split"
+
+- ticker: TATAMOTORS.NS
+  date: "2025-10-14"
+  action: adjust
+  ratio: 0.605373     # ex-date open 400.00 / previous close 660.75
+  reason: "Demerger of the commercial-vehicles business (price-discovery ratio)"
+
+- ticker: NESTLEIND.NS
+  date: "2010-01-08"
+  action: trim_before
+  reason: "Stale zero-volume placeholder prices before this date"
