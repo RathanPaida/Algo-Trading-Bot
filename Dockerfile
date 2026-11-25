@@ -8,14 +8,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# libgomp: OpenMP runtime needed by XGBoost
+# libgomp: OpenMP runtime needed by XGBoost; curl: container healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 curl \
     && rm -rf /var/lib/apt/lists/*
 
-# CPU-only PyTorch keeps the image ~2 GB smaller than the CUDA build
+# The slim image ships an old pip (23.0.1) and no C compiler. Upgrade pip and add
+# build tools only for the install, then remove them to keep the image small.
+# CPU-only PyTorch keeps the image ~2 GB smaller than the CUDA build.
 COPY requirements.txt .
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu \
-    && pip install -r requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && pip install --upgrade pip setuptools wheel \
+    && pip install torch --index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r requirements.txt \
+    && apt-get purge -y build-essential && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 RUN pip install --no-deps -e . \
