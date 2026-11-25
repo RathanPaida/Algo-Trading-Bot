@@ -281,6 +281,62 @@ def page_sql():
         st.code(wh.schema_description(CFG), language="text")
 
 
+EXAMPLE_QUESTIONS = [
+    "Which sectors does the model buy most often?",
+    "What are today's top 5 model picks and their sectors?",
+    "In which period did the strategy beat NIFTY 50 by the most?",
+    "How much did the current portfolio lose in the COVID crash stress test?",
+    "Which features show the most data drift recently?",
+]
+
+
+def page_ai():
+    from equity_intel.genai.commentary import generate_commentary
+    from equity_intel.genai.llm import get_llm
+    from equity_intel.genai.text_to_sql import ask
+
+    st.title("AI analyst")
+    llm = get_llm(CFG)
+    st.caption(f"Language model: **{llm.name}**. Answers are generated from the warehouse only; the SQL used is "
+               "always shown so every answer can be checked.")
+    if not llm.available:
+        st.info("No language model configured - running in offline mode (questions are matched to the closest "
+                "pre-written business query; commentary uses a template). Set `ANTHROPIC_API_KEY` or run Ollama "
+                "locally to enable free-form answers.")
+
+    st.subheader("Ask a question about the results")
+    example = st.selectbox("Examples", ["(type your own)", *EXAMPLE_QUESTIONS])
+    question = st.text_input("Question", "" if example.startswith("(") else example)
+    if st.button("Ask", type="primary", disabled=not question):
+        with st.spinner("Thinking..."):
+            try:
+                a = ask(CFG, question, llm=llm)
+            except Exception as e:
+                st.error(f"Could not answer: {e}")
+                return
+        st.markdown(a.answer)
+        if len(a.result):
+            st.dataframe(a.result, hide_index=True, width="stretch")
+        with st.expander(f"SQL used (attempts: {a.attempts})"):
+            st.code(a.sql, language="sql")
+
+    st.divider()
+    st.subheader("AI portfolio commentary")
+    st.caption("Collects verified facts from the warehouse, has the model write an analyst note, then checks that "
+               "every number in the note can be traced back to the facts.")
+    if st.button("Generate commentary"):
+        with st.spinner("Writing..."):
+            c = generate_commentary(CFG, llm=llm)
+        if c.unverified_numbers:
+            st.warning(f"Grounding check: {len(c.unverified_numbers)} number(s) not found in source data: "
+                       f"{', '.join(c.unverified_numbers)} - verify before sharing.")
+        else:
+            st.success("Grounding check passed: every number traces back to the warehouse.")
+        st.markdown(c.markdown)
+        with st.expander("Facts given to the model"):
+            st.json(c.facts)
+
+
 PAGES = {
     "Overview": page_overview,
     "Performance": page_performance,
@@ -288,6 +344,7 @@ PAGES = {
     "Model health": page_model_health,
     "Data quality": page_data_quality,
     "SQL explorer": page_sql,
+    "AI analyst": page_ai,
 }
 
 with st.sidebar:

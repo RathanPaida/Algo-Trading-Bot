@@ -103,6 +103,14 @@ risk:
     Banking_down_15pct: {type: sector, sector: Banking, shock: -0.15}
     IT_down_15pct:      {type: sector, sector: IT, shock: -0.15}
 
+genai:
+  provider: auto               # auto | anthropic | ollama | offline
+  anthropic_model: claude-opus-5-5
+  effort: medium               # low | medium | high (Claude reasoning effort)
+  ollama_model: llama3.1
+  ollama_url: http://localhost:11434
+  max_rows: 200                # cap on rows returned to the model
+
 paths:
   data_dir: data
   results_dir: results

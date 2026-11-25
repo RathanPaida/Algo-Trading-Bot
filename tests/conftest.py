@@ -34,4 +34,5 @@ def cfg(tmp_path):
         "paths": {"data_dir": str(tmp_path / "data"), "results_dir": str(tmp_path / "results"),
                   "models_dir": str(tmp_path / "models")},
         "portfolio": {"top_k": 3},
+        "genai": {"provider": "offline"},
     })

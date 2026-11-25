@@ -6,7 +6,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).resolve().parents[1] / "dashboard" / "app.py")
-PAGES = ["Overview", "Performance", "Risk", "Model health", "Data quality", "SQL explorer"]
+PAGES = ["Overview", "Performance", "Risk", "Model health", "Data quality", "SQL explorer", "AI analyst"]
 
 
 @pytest.mark.parametrize("page", PAGES)

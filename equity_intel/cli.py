@@ -10,6 +10,8 @@ Examples
     python -m equity_intel sql "SELECT * FROM v_latest_signals LIMIT 10"
     python -m equity_intel tables              # list warehouse tables and views
     python -m equity_intel export-bi           # Parquet files for Power BI
+    python -m equity_intel ask "Which sector did the model buy most?"
+    python -m equity_intel commentary          # AI-written portfolio note
 """
 
 from __future__ import annotations
@@ -48,6 +50,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("tables", help="list warehouse tables and views")
     sub.add_parser("export-bi", help="export warehouse tables/views as Parquet for Power BI")
+
+    ask = sub.add_parser("ask", help="ask a question about the results in plain English")
+    ask.add_argument("question")
+    sub.add_parser("commentary", help="write an AI portfolio note to results/ai_commentary.md")
     return parser
 
 
@@ -79,6 +85,20 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "export-bi":
         for p in wh.export_for_bi(cfg):
             print(p)
+    elif args.command == "ask":
+        from equity_intel.genai.text_to_sql import ask as ask_question
+
+        a = ask_question(cfg, args.question)
+        print(f"[{a.provider}]")
+        print("\nSQL:", a.sql, sep="\n")
+        print("\n" + a.result.head(20).to_string(index=False))
+        print("\n" + a.answer)
+    elif args.command == "commentary":
+        from equity_intel.genai.commentary import generate_commentary
+
+        c = generate_commentary(cfg)
+        print(c.markdown)
+        print(f"\n[{c.provider}] unverified numbers: {c.unverified_numbers or 'none'}")
 
 
 __all__ = ["main", "build_parser", "QUICK_OVERRIDES", "deep_merge"]

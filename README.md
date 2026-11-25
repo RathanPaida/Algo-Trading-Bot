@@ -663,6 +663,16 @@ per-holding risk contribution, historical stress tests (2016 demonetisation, 202
 crash, 2022 rate hikes, 2023 Adani-Hindenburg, H2 2024) and hypothetical shocks.
 For Power BI: `python -m equity_intel export-bi` (see `docs/powerbi_guide.md`).
 
+GenAI layer (works offline; uses Claude when `ANTHROPIC_API_KEY` is set, or a local Ollama model):
+
+```bash
+python -m equity_intel ask "Which sectors does the model buy most often?"   # text-to-SQL
+python -m equity_intel commentary                                           # grounded AI portfolio note
+```
+
+Generated SQL must pass a read-only check and runs on a locked connection; the
+commentary is checked so every number traces back to the warehouse.
+
 Business SQL queries live in `sql/business_queries.sql`; BI views in `sql/views.sql`.
 Known corporate actions that Yahoo does not adjust for are in `config/corporate_actions.yaml`.
 
