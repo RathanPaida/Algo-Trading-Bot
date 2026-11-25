@@ -91,13 +91,11 @@ def publish_results(con, tables: dict[str, pd.DataFrame], panel: pd.DataFrame) -
         "portfolio_weights": "fact_portfolio_weights", "daily_returns": "fact_daily_returns",
         "feature_importance": "feature_importance",
     }
-    for key, table in mapping.items():
-        if key in tables:
-            df = tables[key]
-            if key in ("performance_summary", "model_performance"):
-                df = df.reset_index().rename(columns={"index": "period"})
-            write_table(con, table, df)
-    log.info("Warehouse: published %d result tables", len(mapping))
+    for key, df in tables.items():
+        if key in ("performance_summary", "model_performance", "walk_forward_model_performance"):
+            df = df.reset_index().rename(columns={"index": "period", "Period": "period"})
+        write_table(con, mapping.get(key, key), df)
+    log.info("Warehouse: published %d result tables", len(tables))
 
 
 def apply_views(con, sql_file: Path = VIEWS_SQL) -> None:

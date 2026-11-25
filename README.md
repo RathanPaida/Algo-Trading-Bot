@@ -647,6 +647,11 @@ python -m equity_intel warehouse    # load DuckDB warehouse + refresh SQL views
 python -m equity_intel sql "SELECT * FROM v_latest_signals LIMIT 10"
 ```
 
+Each training run also produces model diagnostics: walk-forward retraining,
+baseline strategies (equal weight, momentum-only, random ranking), SHAP explanations,
+PSI drift monitoring and rolling IC. Runs are tracked in MLflow:
+`mlflow ui --backend-store-uri sqlite:///mlflow.db`.
+
 Business SQL queries live in `sql/business_queries.sql`; BI views in `sql/views.sql`.
 Known corporate actions that Yahoo does not adjust for are in `config/corporate_actions.yaml`.
 

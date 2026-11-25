@@ -15,18 +15,22 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from equity_intel import reporting
 from equity_intel.backtest import BacktestResult, run_backtest
+from equity_intel.baselines import comparison_table, run_baselines
 from equity_intel.config import results_dirs, set_seed
 from equity_intel.data import warehouse as wh
 from equity_intel.data.lake import DataLake, ingest_all
 from equity_intel.data.quality import run_quality
-from equity_intel.features import FEATURES, build_panel, training_cutoff
+from equity_intel.explain import explain_latest, global_importance
+from equity_intel.features import FEATURES, build_panel
 from equity_intel.models import lstm_model, xgb_model
-from equity_intel.models.ensemble import ensemble_score
+from equity_intel.models.training import TrainedModels, fit_models, score_panel
+from equity_intel.models.walk_forward import walk_forward
+from equity_intel.monitoring import drift_report, rolling_ic
+from equity_intel.tracking import log_results, mlflow_run
 from equity_intel.universe import SYMBOLS
 
 log = logging.getLogger(__name__)
@@ -94,31 +98,20 @@ def evaluation_periods(cfg: dict, last_date: pd.Timestamp) -> dict[str, tuple[st
     return out
 
 
-def train_and_score(panel: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, object, object, object]:
-    """Train XGBoost + LSTM on data up to the training cutoff and score every row."""
-    f, m = cfg["features"], cfg["models"]
-    cutoff = training_cutoff(panel["date"], cfg["splits"]["train_end"], f["horizon"])
-    log.info("Training cutoff (after %d-day embargo): %s", f["horizon"], cutoff.date())
-
-    in_train = (panel["date"] <= cutoff).to_numpy()
-    train = panel[in_train & panel["y"].notna().to_numpy()]
-
-    xgb = xgb_model.train_xgb(train, m["xgb"], cfg["project"]["seed"])
-    panel["pred_xgb"] = xgb_model.predict_xgb(xgb, panel)
-
-    scaler = lstm_model.Scaler.fit(train[FEATURES].to_numpy(np.float32))
-    in_val = panel["date"].between(pd.Timestamp(cfg["splits"]["val_start"]),
-                                   pd.Timestamp(cfg["splits"]["val_end"])).to_numpy()
-    lstm = lstm_model.train_lstm(panel, scaler, in_train, in_val, m["lstm"], f["lookback"])
-    panel["pred_lstm"] = lstm_model.predict_lstm(lstm, panel, scaler, f["lookback"])
-
-    e = m["ensemble"]
-    panel["score"] = ensemble_score(panel["pred_xgb"], panel["pred_lstm"], e["w_xgb"], e["w_lstm"])
-    return panel, xgb, lstm, scaler
+def train_and_score(panel: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, TrainedModels]:
+    """The static model: train once on data up to splits.train_end, score every row."""
+    s = cfg["splits"]
+    models = fit_models(panel, cfg, s["train_end"], s["val_start"], s["val_end"])
+    log.info("Static model trained (cutoff after %d-day embargo: %s)",
+             cfg["features"]["horizon"], models.cutoff.date())
+    scored = score_panel(panel, models, cfg)
+    panel[scored.columns] = scored
+    return panel, models
 
 
-def run_backtests(panel: pd.DataFrame, data: MarketData, periods: dict, cfg: dict) -> dict[str, BacktestResult]:
-    scores = panel[["date", "symbol", "score", "mom20", "vol60"]]
+def run_backtests(panel: pd.DataFrame, data: MarketData, periods: dict, cfg: dict,
+                  score_col: str = "score") -> dict[str, BacktestResult]:
+    scores = panel[["date", "symbol", score_col, "mom20", "vol60"]].rename(columns={score_col: "score"})
     results = {}
     for name, (start, end) in periods.items():
         res = run_backtest(scores, data.closes, data.benchmark, start, end, cfg["portfolio"], name)
@@ -127,34 +120,76 @@ def run_backtests(panel: pd.DataFrame, data: MarketData, periods: dict, cfg: dic
     return results
 
 
-def save_models(cfg: dict, xgb, lstm, scaler) -> None:
+def save_models(cfg: dict, models: TrainedModels) -> None:
     models_dir = Path(cfg["paths"]["models_dir"])
-    xgb_model.save_xgb(xgb, models_dir / "xgb.json")
-    lstm_model.save_lstm(lstm, scaler, models_dir / "lstm.pt", cfg["models"]["lstm"])
+    xgb_model.save_xgb(models.xgb, models_dir / "xgb.json")
+    lstm_model.save_lstm(models.lstm, models.scaler, models_dir / "lstm.pt", cfg["models"]["lstm"])
     log.info("Saved models to %s", models_dir)
+
+
+def run_diagnostics(panel, data, results, periods, models, cfg) -> tuple[dict, dict, pd.DataFrame]:
+    """Everything that tells us whether to TRUST the model:
+    baselines, walk-forward retraining, SHAP explanations, drift and rolling IC."""
+    tables: dict[str, pd.DataFrame] = {}
+    s, mon = cfg["splits"], cfg["monitoring"]
+
+    log.info("Diagnostics: baselines")
+    baselines = run_baselines(panel, data, periods, cfg["portfolio"], mon.get("n_random_baselines", 10))
+
+    wf_results: dict[str, BacktestResult] = {}
+    if cfg["walk_forward"]["enabled"]:
+        log.info("Diagnostics: walk-forward retraining")
+        wf_preds, folds = walk_forward(panel, cfg)
+        panel[["wf_pred_xgb", "wf_pred_lstm", "wf_score"]] = wf_preds.to_numpy()
+        wf_start = pd.Timestamp(cfg["walk_forward"]["start"])
+        wf_periods = {k: v for k, v in periods.items() if pd.Timestamp(v[0]) >= wf_start}
+        wf_results = run_backtests(panel, data, wf_periods, cfg, score_col="wf_score")
+        wf_panel = panel.drop(columns=["pred_xgb", "pred_lstm", "score"]).rename(
+            columns={"wf_pred_xgb": "pred_xgb", "wf_pred_lstm": "pred_lstm", "wf_score": "score"})
+        tables["walk_forward_folds"] = folds
+        tables["walk_forward_model_performance"] = reporting.model_performance_table(wf_panel, wf_periods)
+
+    tables["strategy_comparison"] = comparison_table(results, baselines, wf_results)
+
+    log.info("Diagnostics: SHAP explanations")
+    oos = panel[panel["date"] > pd.Timestamp(s["train_end"])]
+    sample = oos.sample(min(5000, len(oos)), random_state=cfg["project"]["seed"])
+    tables["shap_importance"] = global_importance(models.xgb, sample)
+    tables["latest_explanations"] = explain_latest(models.xgb, panel, cfg["portfolio"]["top_k"])
+
+    log.info("Diagnostics: drift (PSI) and rolling IC")
+    tables["drift_report"] = drift_report(panel, s["train_end"], periods, mon)
+    tables["rolling_ic"] = rolling_ic(panel, s["val_start"], mon["ic_window"])
+    return tables, wf_results, sample
 
 
 def stage_train(cfg: dict, symbols: list[str]) -> dict:
     set_seed(cfg["project"]["seed"])
-    figs, tables = results_dirs(cfg)
+    figs, tables_dir = results_dirs(cfg)
     data = load_market_data(cfg, symbols)
 
-    panel = build_panel(data.prices, cfg["features"]["horizon"])
-    log.info("Panel: %s rows, %d symbols, %d features",
-             f"{len(panel):,}", panel["symbol"].nunique(), len(FEATURES))
+    with mlflow_run(cfg, f"pipeline-{datetime.now():%Y%m%d-%H%M}") as tracker:
+        panel = build_panel(data.prices, cfg["features"]["horizon"])
+        log.info("Panel: %s rows, %d symbols, %d features",
+                 f"{len(panel):,}", panel["symbol"].nunique(), len(FEATURES))
 
-    panel, xgb, lstm, scaler = train_and_score(panel, cfg)
-    save_models(cfg, xgb, lstm, scaler)
+        panel, models = train_and_score(panel, cfg)
+        save_models(cfg, models)
 
-    periods = evaluation_periods(cfg, panel["date"].max())
-    results = run_backtests(panel, data, periods, cfg)
+        periods = evaluation_periods(cfg, panel["date"].max())
+        results = run_backtests(panel, data, periods, cfg)
+        diag, wf_results, shap_sample = run_diagnostics(panel, data, results, periods, models, cfg)
 
-    model_periods = {"Training": (cfg["data"]["start"], cfg["splits"]["train_end"]), **periods}
-    out = reporting.save_tables(results, panel, model_periods, xgb, tables)
-    reporting.save_figures(results, panel, model_periods, out["feature_importance"], figs)
-    reporting.write_text_report(results, cfg, Path(cfg["paths"]["results_dir"]) / "detailed_report.txt")
-    return {"data": data, "panel": panel, "results": results, "tables": out,
-            "xgb": xgb, "lstm": lstm, "scaler": scaler}
+        model_periods = {"Training": (cfg["data"]["start"], cfg["splits"]["train_end"]), **periods}
+        tables = reporting.save_tables(results, panel, model_periods, models.xgb, tables_dir, extra=diag)
+        reporting.save_figures(results, panel, model_periods, tables["feature_importance"], figs)
+        reporting.save_diagnostic_figures(tables, results, wf_results, models.xgb, shap_sample, cfg, figs)
+        reporting.write_text_report(results, cfg, Path(cfg["paths"]["results_dir"]) / "detailed_report.txt",
+                                    tables)
+        out = {"data": data, "panel": panel, "results": results, "wf_results": wf_results,
+               "tables": tables, "models": models}
+        log_results(tracker, out, cfg)
+    return out
 
 
 def stage_warehouse(cfg: dict, out: dict | None = None, dq_report: pd.DataFrame | None = None,

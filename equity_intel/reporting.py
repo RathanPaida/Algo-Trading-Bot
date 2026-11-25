@@ -59,7 +59,11 @@ def _stack(results: dict[str, BacktestResult], attr: str) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def save_tables(results, panel, periods, xgb_model, tables_dir: Path) -> dict[str, pd.DataFrame]:
+INDEXED_TABLES = ("performance_summary", "model_performance", "walk_forward_model_performance")
+
+
+def save_tables(results, panel, periods, xgb_model, tables_dir: Path,
+                extra: dict[str, pd.DataFrame] | None = None) -> dict[str, pd.DataFrame]:
     out = {
         "performance_summary": performance_table(results),
         "model_performance": model_performance_table(panel, periods),
@@ -70,14 +74,15 @@ def save_tables(results, panel, periods, xgb_model, tables_dir: Path) -> dict[st
         "feature_importance": pd.DataFrame({"feature": FEATURES,
                                             "importance": xgb_model.feature_importances_})
                               .sort_values("importance", ascending=False),
+        **(extra or {}),
     }
     for name, df in out.items():
-        df.to_csv(tables_dir / f"{name}.csv", index=name in ("performance_summary", "model_performance"))
+        df.to_csv(tables_dir / f"{name}.csv", index=name in INDEXED_TABLES)
     log.info("Saved %d tables to %s", len(out), tables_dir)
     return out
 
 
-def write_text_report(results, cfg, path: Path) -> None:
+def write_text_report(results, cfg, path: Path, tables: dict | None = None) -> None:
     lines = ["=" * 80, "EQUITY INTELLIGENCE PLATFORM - BACKTEST REPORT", "=" * 80,
              f"Generated: {datetime.now():%Y-%m-%d %H:%M}", "",
              f"Prediction horizon : {cfg['features']['horizon']} days",
@@ -96,6 +101,20 @@ def write_text_report(results, cfg, path: Path) -> None:
                   f"  Max drawdown     : {s['MaxDD']:8.2f}%",
                   f"  Volatility       : {s['Volatility']:8.2f}%",
                   f"  Rebalances       : {s['Num_Trades']:8d}   costs {s['Total_Cost']:.2f}%", ""]
+    tables = tables or {}
+    if "strategy_comparison" in tables:
+        pivot = tables["strategy_comparison"].pivot_table(index="strategy", columns="period",
+                                                          values="total_return", sort=False)
+        lines += ["=" * 80, "TOTAL RETURN (%) - ML MODEL vs BASELINES", "=" * 80,
+                  pivot.round(2).to_string(), ""]
+    if "model_performance" in tables:
+        mp = tables["model_performance"]
+        lines += ["=" * 80, "MODEL RANKING SKILL (mean daily IC) AND DIRECTION ACCURACY", "=" * 80,
+                  mp[["XGB_IC", "LSTM_IC", "Ensemble_IC", "Ensemble_Direction_Acc"]].round(4).to_string(), ""]
+    if "drift_report" in tables:
+        dr = tables["drift_report"]
+        lines += ["=" * 80, "DATA DRIFT (PSI vs training data) - most drifted features", "=" * 80,
+                  dr.head(8).round(3).to_string(index=False), ""]
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -249,3 +268,102 @@ def save_figures(results, panel, periods, importance, figs: Path) -> None:
     plot_feature_importance(importance, figs)
     plot_prediction_scatter(panel, {k: v for k, v in periods.items() if k != "Training"}, figs)
     log.info("Saved figures to %s", figs)
+
+
+# ----------------------------------------------------------- diagnostics
+def plot_strategy_comparison(comp: pd.DataFrame, figs: Path) -> None:
+    pivot = comp.pivot_table(index="period", columns="strategy", values="total_return", sort=False)
+    fig, ax = plt.subplots(figsize=(14, 6))
+    pivot.plot.bar(ax=ax, width=0.85, colormap="tab10")
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_ylabel("Total return (%)")
+    ax.set_title("ML model vs baselines (same costs and portfolio rules)", fontweight="bold")
+    ax.tick_params(axis="x", rotation=0)
+    ax.legend(fontsize=8, ncol=3)
+    ax.grid(alpha=0.3, axis="y")
+    _save(fig, figs / "strategy_comparison.png")
+
+
+def plot_shap(shap_imp: pd.DataFrame, xgb_model, sample: pd.DataFrame, figs: Path, top: int = 15) -> None:
+    from equity_intel.explain import shap_values
+
+    sv, _ = shap_values(xgb_model, sample)
+    feats = shap_imp["feature"].head(top).tolist()[::-1]
+    idx = [FEATURES.index(f) for f in feats]
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(16, 7), gridspec_kw={"width_ratios": [1, 1.4]})
+    a1.barh(feats, shap_imp.set_index("feature").loc[feats, "mean_abs_shap"] * 100, color=STRATEGY_COLOR)
+    a1.set_xlabel("mean |SHAP| (% of predicted return)")
+    a1.set_title("Global feature impact (SHAP)", fontweight="bold")
+    rng = np.random.default_rng(0)
+    for row, j in enumerate(idx):
+        vals = sample[FEATURES[j]].to_numpy()
+        lo, hi = np.nanpercentile(vals, [5, 95])
+        colour = np.clip((vals - lo) / (hi - lo + 1e-12), 0, 1)
+        a2.scatter(sv[:, j] * 100, row + rng.uniform(-0.3, 0.3, len(vals)), c=colour,
+                   cmap="coolwarm", s=4, alpha=0.5)
+    a2.set_yticks(range(len(feats)), feats)
+    a2.axvline(0, color="black", lw=0.8)
+    a2.set_xlabel("SHAP value (% impact on predicted 5-day return)")
+    a2.set_title("Each dot = one prediction (red = high feature value)", fontweight="bold")
+    _save(fig, figs / "shap_summary.png")
+
+
+def plot_drift(drift: pd.DataFrame, cfg: dict, figs: Path, top: int = 15) -> None:
+    mon = cfg["monitoring"]
+    latest = [c for c in drift.columns if c.startswith("Last_")][0]
+    d = drift.head(top).iloc[::-1]
+    colours = ["#d62728" if v > mon["psi_alert"] else "#ff7f0e" if v > mon["psi_warn"] else "#2ca02c"
+               for v in d[latest]]
+    fig, ax = plt.subplots(figsize=(10, 7))
+    ax.barh(d["feature"], d[latest], color=colours)
+    ax.axvline(mon["psi_warn"], color="#ff7f0e", ls="--", label=f"watch ({mon['psi_warn']})")
+    ax.axvline(mon["psi_alert"], color="#d62728", ls="--", label=f"alert ({mon['psi_alert']})")
+    ax.set_xlabel("Population Stability Index vs training data")
+    ax.set_title(f"Feature drift - {latest.replace('_', ' ')}", fontweight="bold")
+    ax.legend()
+    _save(fig, figs / "drift_psi.png")
+
+
+def plot_rolling_ic(ric: pd.DataFrame, figs: Path) -> None:
+    fig, ax = plt.subplots(figsize=(14, 5))
+    ax.bar(ric["date"], ric["ic"], color="lightgray", width=1.5, label="daily IC")
+    ax.plot(ric["date"], ric["rolling_ic"], color=STRATEGY_COLOR, lw=2, label="rolling mean")
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_title("Model ranking skill over time (Information Coefficient, out of sample)", fontweight="bold")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    _save(fig, figs / "rolling_ic.png")
+
+
+def plot_walk_forward(results, wf_results, figs: Path) -> None:
+    names = [n for n in results if n in wf_results]
+    if not names:
+        return
+    fig, axes = _grid(len(names))
+    for ax, name in zip(axes, names):
+        r, w = results[name], wf_results[name]
+        ax.plot(r.equity.index, r.equity, color=STRATEGY_COLOR, lw=2,
+                label=f"static model ({r.stats['Total_Return']:.1f}%)")
+        ax.plot(w.equity.index, w.equity, color="#2ca02c", lw=2,
+                label=f"walk-forward ({w.stats['Total_Return']:.1f}%)")
+        ax.plot(r.benchmark.index, r.benchmark, color=BENCH_COLOR, ls="--", lw=1.5,
+                label=f"NIFTY 50 ({r.stats['Benchmark_Return']:.1f}%)")
+        ax.set_title(name, fontweight="bold")
+        ax.legend(loc="upper left", fontsize=8)
+        ax.grid(alpha=0.3)
+        ax.tick_params(axis="x", rotation=30)
+    _save(fig, figs / "walk_forward_vs_static.png")
+
+
+def save_diagnostic_figures(tables, results, wf_results, xgb_model, shap_sample, cfg, figs: Path) -> None:
+    if "strategy_comparison" in tables:
+        plot_strategy_comparison(tables["strategy_comparison"], figs)
+    if "shap_importance" in tables:
+        plot_shap(tables["shap_importance"], xgb_model, shap_sample, figs)
+    if "drift_report" in tables:
+        plot_drift(tables["drift_report"], cfg, figs)
+    if "rolling_ic" in tables and len(tables["rolling_ic"]):
+        plot_rolling_ic(tables["rolling_ic"], figs)
+    if wf_results:
+        plot_walk_forward(results, wf_results, figs)
+    log.info("Saved diagnostic figures")

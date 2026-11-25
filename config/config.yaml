@@ -53,6 +53,25 @@ models:
     w_xgb: 0.6
     w_lstm: 0.4
 
+# Walk-forward: retrain every N months on all data available at that time
+walk_forward:
+  enabled: true
+  start: "2024-01-01"
+  retrain_months: 6
+  val_months: 6          # LSTM early-stopping window just before each fold
+
+monitoring:
+  psi_bins: 10
+  psi_warn: 0.10
+  psi_alert: 0.25
+  recent_days: 60        # "current" window for drift checks
+  ic_window: 60          # rolling information-coefficient window
+  n_random_baselines: 10
+
+tracking:
+  mlflow: true
+  experiment: equity-intelligence
+
 portfolio:
   top_k: 15
   rebalance_weekday: 4         # 0 = Monday ... 4 = Friday
