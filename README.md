@@ -652,6 +652,17 @@ baseline strategies (equal weight, momentum-only, random ranking), SHAP explanat
 PSI drift monitoring and rolling IC. Runs are tracked in MLflow:
 `mlflow ui --backend-store-uri sqlite:///mlflow.db`.
 
+Interactive dashboard (performance, risk, model health, data quality, SQL explorer):
+
+```bash
+streamlit run dashboard/app.py
+```
+
+Risk analytics: historical/parametric VaR and CVaR, beta, CAPM alpha, tracking error,
+per-holding risk contribution, historical stress tests (2016 demonetisation, 2020 COVID
+crash, 2022 rate hikes, 2023 Adani-Hindenburg, H2 2024) and hypothetical shocks.
+For Power BI: `python -m equity_intel export-bi` (see `docs/powerbi_guide.md`).
+
 Business SQL queries live in `sql/business_queries.sql`; BI views in `sql/views.sql`.
 Known corporate actions that Yahoo does not adjust for are in `config/corporate_actions.yaml`.
 

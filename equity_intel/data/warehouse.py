@@ -119,11 +119,71 @@ def log_run(con, stage: str, status: str, started: datetime, details: str = "") 
 
 
 def query(cfg: dict, sql: str, params: list | None = None) -> pd.DataFrame:
-    """Run a read-only SQL query against the warehouse and return a DataFrame."""
+    """Run a trusted, read-only SQL query against the warehouse and return a DataFrame."""
     with connect(cfg, read_only=True) as con:
         return con.execute(sql, params or []).df()
+
+
+def safe_query(cfg: dict, sql: str, limit: int = 1000) -> pd.DataFrame:
+    """Run UNTRUSTED SQL (typed by a user or written by an LLM).
+
+    The query must pass the read-only check, runs on a read-only connection with
+    file access disabled and settings locked, and returns at most `limit` rows.
+    """
+    from equity_intel.sql_safety import check_read_only, with_limit
+
+    body = check_read_only(sql)
+    path = db_path(cfg)
+    con = duckdb.connect(str(path), read_only=True,
+                         config={"enable_external_access": False, "lock_configuration": True})
+    try:
+        return con.execute(with_limit(body, limit)).df()
+    finally:
+        con.close()
+
+
+def schema_description(cfg: dict) -> str:
+    """Compact text description of all tables/views and their columns (used to prompt the LLM)."""
+    cols = query(cfg, "SELECT table_name, column_name, data_type FROM information_schema.columns "
+                      "WHERE table_schema = 'main' ORDER BY table_name, ordinal_position")
+    lines = []
+    for table, g in cols.groupby("table_name", sort=True):
+        lines.append(f"{table}(" + ", ".join(f"{c} {t}" for c, t in zip(g["column_name"], g["data_type"])) + ")")
+    return "\n".join(lines)
+
+
+def load_named_queries(path: Path = ROOT / "sql" / "business_queries.sql") -> dict[str, str]:
+    """Parse business_queries.sql into {"Q1. question": "SELECT ..."}."""
+    out = {}
+    for stmt in Path(path).read_text(encoding="utf-8").split(";"):
+        lines = stmt.strip().splitlines()
+        titles = [ln.strip("- ").strip() for ln in lines if ln.strip().startswith("-- Q")]
+        body = "\n".join(ln for ln in lines if not ln.strip().startswith("--")).strip()
+        if titles and body:
+            out[titles[0]] = body
+    return out
 
 
 def list_tables(cfg: dict) -> pd.DataFrame:
     return query(cfg, "SELECT table_name, table_type FROM information_schema.tables "
                       "WHERE table_schema = 'main' ORDER BY table_type, table_name")
+
+
+def export_for_bi(cfg: dict, out_dir: Path | None = None) -> list[Path]:
+    """Export every warehouse table and view as Parquet for Power BI / Tableau.
+
+    Power BI: Get Data -> Parquet (or Folder) -> select exports/powerbi.
+    See docs/powerbi_guide.md for relationships and suggested measures.
+    """
+    out_dir = Path(out_dir or ROOT / "exports" / "powerbi")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    with connect(cfg, read_only=True) as con:
+        names = [r[0] for r in con.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'").fetchall()]
+        for name in names:
+            path = out_dir / f"{name}.parquet"
+            con.execute(f"COPY (SELECT * FROM {name}) TO '{path.as_posix()}' (FORMAT PARQUET)")
+            written.append(path)
+    log.info("Exported %d tables/views to %s", len(written), out_dir)
+    return written

@@ -30,6 +30,7 @@ from equity_intel.models import lstm_model, xgb_model
 from equity_intel.models.training import TrainedModels, fit_models, score_panel
 from equity_intel.models.walk_forward import walk_forward
 from equity_intel.monitoring import drift_report, rolling_ic
+from equity_intel.risk import run_risk
 from equity_intel.tracking import log_results, mlflow_run
 from equity_intel.universe import SYMBOLS
 
@@ -179,6 +180,7 @@ def stage_train(cfg: dict, symbols: list[str]) -> dict:
         periods = evaluation_periods(cfg, panel["date"].max())
         results = run_backtests(panel, data, periods, cfg)
         diag, wf_results, shap_sample = run_diagnostics(panel, data, results, periods, models, cfg)
+        diag.update(run_risk(results, data, cfg))
 
         model_periods = {"Training": (cfg["data"]["start"], cfg["splits"]["train_end"]), **periods}
         tables = reporting.save_tables(results, panel, model_periods, models.xgb, tables_dir, extra=diag)

@@ -18,6 +18,7 @@ env/
 /data/
 /models/
 /mlruns/
+/exports/
 mlflow.db
 
 # Editors / OS

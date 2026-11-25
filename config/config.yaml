@@ -86,6 +86,23 @@ portfolio:
   cost_bps: 8
   slip_bps: 3
 
+risk:
+  notional_inr: 1000000        # INR 10 lakh portfolio, used to express VaR in rupees
+  lookback_days: 250           # one trading year for volatility / beta / covariance
+  # Historical stress tests: replay these periods on TODAY's portfolio
+  scenarios:
+    Demonetisation_2016:   ["2016-11-08", "2016-12-26"]
+    COVID_crash_2020:      ["2020-02-19", "2020-03-23"]
+    Rate_hikes_2022:       ["2022-01-17", "2022-06-17"]
+    Adani_Hindenburg_2023: ["2023-01-24", "2023-02-28"]
+    Correction_H2_2024:    ["2024-09-27", "2024-11-21"]
+  # Hypothetical instant shocks
+  shocks:
+    Market_down_10pct:  {type: market, shock: -0.10}
+    Market_down_20pct:  {type: market, shock: -0.20}
+    Banking_down_15pct: {type: sector, sector: Banking, shock: -0.15}
+    IT_down_15pct:      {type: sector, sector: IT, shock: -0.15}
+
 paths:
   data_dir: data
   results_dir: results

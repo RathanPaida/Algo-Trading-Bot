@@ -111,6 +111,18 @@ def write_text_report(results, cfg, path: Path, tables: dict | None = None) -> N
         mp = tables["model_performance"]
         lines += ["=" * 80, "MODEL RANKING SKILL (mean daily IC) AND DIRECTION ACCURACY", "=" * 80,
                   mp[["XGB_IC", "LSTM_IC", "Ensemble_IC", "Ensemble_Direction_Acc"]].round(4).to_string(), ""]
+    if "portfolio_risk" in tables:
+        pr = tables["portfolio_risk"].iloc[0]
+        lines += ["=" * 80, f"CURRENT PORTFOLIO RISK (as of {pr['as_of']})", "=" * 80,
+                  f"  Holdings / effective N : {pr['n_holdings']} / {pr['effective_n_stocks']:.1f}",
+                  f"  Volatility (annual)    : {pr['portfolio_volatility'] * 100:.2f}%",
+                  f"  Beta vs NIFTY 50       : {pr['portfolio_beta']:.2f}",
+                  f"  1-day VaR 95%          : {pr['VaR_95_1d'] * 100:.2f}%  = INR {pr['VaR_95_1d_inr']:,.0f}"
+                  f" on INR {pr['notional_inr']:,.0f}",
+                  f"  1-day CVaR 95%         : {pr['CVaR_95_1d'] * 100:.2f}%", ""]
+    if "stress_tests" in tables:
+        lines += ["STRESS TESTS", tables["stress_tests"].drop(columns=["start", "end"], errors="ignore")
+                  .round(2).to_string(index=False), ""]
     if "drift_report" in tables:
         dr = tables["drift_report"]
         lines += ["=" * 80, "DATA DRIFT (PSI vs training data) - most drifted features", "=" * 80,
@@ -355,6 +367,32 @@ def plot_walk_forward(results, wf_results, figs: Path) -> None:
     _save(fig, figs / "walk_forward_vs_static.png")
 
 
+def plot_risk(tables: dict, figs: Path) -> None:
+    st, hr = tables["stress_tests"], tables["holdings_risk"]
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(17, 6.5))
+    hist = st[st["type"] == "historical"]
+    x = np.arange(len(hist))
+    a1.bar(x - 0.2, hist["portfolio_return_pct"], 0.4, label="Current portfolio", color=STRATEGY_COLOR)
+    a1.bar(x + 0.2, hist["nifty_return_pct"], 0.4, label="NIFTY 50", color=BENCH_COLOR)
+    hyp = st[st["type"] == "hypothetical"]
+    xh = np.arange(len(hist), len(hist) + len(hyp))
+    a1.bar(xh, hyp["portfolio_return_pct"], 0.5, label="Hypothetical shock", color="gray")
+    a1.set_xticks(np.r_[x, xh], [n.replace("_", " ") for n in np.r_[hist["scenario"], hyp["scenario"]]],
+                  rotation=35, ha="right")
+    a1.axhline(0, color="black", lw=0.8)
+    a1.set_ylabel("Return (%)")
+    a1.set_title("Stress tests on today's portfolio", fontweight="bold")
+    a1.legend()
+    a1.grid(alpha=0.3, axis="y")
+
+    h = hr.sort_values("risk_contribution_pct")
+    a2.barh(h["symbol"], h["weight"] * 100, color="lightgray", label="weight %")
+    a2.barh(h["symbol"], h["risk_contribution_pct"], height=0.4, color="#d62728", label="share of risk %")
+    a2.set_title("Weight vs contribution to portfolio risk", fontweight="bold")
+    a2.legend()
+    _save(fig, figs / "risk_stress_tests.png")
+
+
 def save_diagnostic_figures(tables, results, wf_results, xgb_model, shap_sample, cfg, figs: Path) -> None:
     if "strategy_comparison" in tables:
         plot_strategy_comparison(tables["strategy_comparison"], figs)
@@ -366,4 +404,6 @@ def save_diagnostic_figures(tables, results, wf_results, xgb_model, shap_sample,
         plot_rolling_ic(tables["rolling_ic"], figs)
     if wf_results:
         plot_walk_forward(results, wf_results, figs)
+    if "stress_tests" in tables and len(tables["stress_tests"]):
+        plot_risk(tables, figs)
     log.info("Saved diagnostic figures")

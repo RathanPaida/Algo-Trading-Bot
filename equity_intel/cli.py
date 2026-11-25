@@ -9,6 +9,7 @@ Examples
     python -m equity_intel warehouse           # reload DuckDB tables + views
     python -m equity_intel sql "SELECT * FROM v_latest_signals LIMIT 10"
     python -m equity_intel tables              # list warehouse tables and views
+    python -m equity_intel export-bi           # Parquet files for Power BI
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     sql.add_argument("query")
 
     sub.add_parser("tables", help="list warehouse tables and views")
+    sub.add_parser("export-bi", help="export warehouse tables/views as Parquet for Power BI")
     return parser
 
 
@@ -74,6 +76,9 @@ def main(argv: list[str] | None = None) -> None:
         print(wh.query(cfg, args.query).to_string(index=False))
     elif args.command == "tables":
         print(wh.list_tables(cfg).to_string(index=False))
+    elif args.command == "export-bi":
+        for p in wh.export_for_bi(cfg):
+            print(p)
 
 
 __all__ = ["main", "build_parser", "QUICK_OVERRIDES", "deep_merge"]

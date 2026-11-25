@@ -15,8 +15,11 @@ pandera==0.36.0
 # ML governance
 mlflow==3.18.0
 
-# Charts
+# Charts and dashboard
 matplotlib==3.10.8
+plotly==6.6.0
+streamlit==1.55.0
+scipy
 
 # Development
 pytest==9.0.2
